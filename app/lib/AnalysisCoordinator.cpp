@@ -1,5 +1,9 @@
 #include "AnalysisCoordinator.hpp"
 
+#include "EndpointImageAnalyzer.hpp"
+#include "OpenAICompatibleProvider.hpp"
+#include "EndpointUrlResolver.hpp"
+
 #include "AnalysisEntryRouter.hpp"
 #include "AnalysisProgress.hpp"
 #include "CategoryDateSuffix.hpp"
@@ -935,47 +939,51 @@ AnalysisRunResult AnalysisCoordinator::execute()
                 }
             };
 
-            std::string error;
-            auto visual_backend =
-                VisualLlmRuntime::resolve_active_backend(app_.settings.get_visual_model_id(),
-                                                         app_.settings.get_custom_llms(),
-                                                         &error);
-            if (!visual_backend) {
-                throw std::runtime_error(error);
-            }
-            if (app_.core_logger && visual_backend->descriptor) {
-                app_.core_logger->info("Using visual backend '{}' ({})",
-                                       visual_backend->descriptor->display_name,
-                                       visual_backend->descriptor->id);
-            }
-
+            const bool is_remote = is_remote_choice(app_.settings.get_llm_choice());
+            std::optional<VisualLlmRuntime::Backend> visual_backend;
             ImageAnalyzerSettings vision_settings;
-            vision_settings.use_gpu = VisualLlmRuntime::should_use_gpu();
             const auto visual_gpu_override = read_env_bool("AI_FILE_SORTER_VISUAL_USE_GPU");
-            if (visual_gpu_override.has_value()) {
-                vision_settings.use_gpu = *visual_gpu_override;
-            }
-            vision_settings.batch_progress = [this](int current_batch, int total_batches) {
-                if (total_batches <= 0 || current_batch <= 0) {
-                    return;
-                }
-                const double percent =
-                    (static_cast<double>(current_batch) / static_cast<double>(total_batches)) * 100.0;
-                app_.append_progress(to_utf8(app_.tr("[VISION] Decoding image batch %1/%2 (%3%)")
-                                                 .arg(current_batch)
-                                                 .arg(total_batches)
-                                                 .arg(percent, 0, 'f', 2)));
-            };
-            vision_settings.log_visual_output = app_.should_log_prompts();
-
             const bool allow_visual_cpu_fallback =
-                vision_settings.use_gpu && !visual_gpu_override.has_value();
+                !is_remote && vision_settings.use_gpu && !visual_gpu_override.has_value();
             std::optional<bool> visual_cpu_fallback_choice;
             bool visual_cpu_fallback_active = false;
 
             auto should_retry_on_cpu = [](const std::exception& ex) {
                 return VisualLlmRuntime::should_offer_cpu_fallback(ex.what());
             };
+
+            if (!is_remote) {
+                std::string error;
+                visual_backend =
+                    VisualLlmRuntime::resolve_active_backend(app_.settings.get_visual_model_id(),
+                                                             app_.settings.get_custom_llms(),
+                                                             &error);
+                if (!visual_backend) {
+                    throw std::runtime_error(error);
+                }
+                if (app_.core_logger && visual_backend->descriptor) {
+                    app_.core_logger->info("Using visual backend '{}' ({})",
+                                           visual_backend->descriptor->display_name,
+                                           visual_backend->descriptor->id);
+                }
+
+                vision_settings.use_gpu = VisualLlmRuntime::should_use_gpu();
+                if (visual_gpu_override.has_value()) {
+                    vision_settings.use_gpu = *visual_gpu_override;
+                }
+                vision_settings.batch_progress = [this](int current_batch, int total_batches) {
+                    if (total_batches <= 0 || current_batch <= 0) {
+                        return;
+                    }
+                    const double percent =
+                        (static_cast<double>(current_batch) / static_cast<double>(total_batches)) * 100.0;
+                    app_.append_progress(to_utf8(app_.tr("[VISION] Decoding image batch %1/%2 (%3%)")
+                                                     .arg(current_batch)
+                                                     .arg(total_batches)
+                                                     .arg(percent, 0, 'f', 2)));
+                };
+                vision_settings.log_visual_output = app_.should_log_prompts();
+            }
 
             auto update_cached_image_suggestion = [&](const FileEntry& entry,
                                                       const std::string& suggested_name) {
@@ -1089,59 +1097,97 @@ AnalysisRunResult AnalysisCoordinator::execute()
                 throw AnalysisCancelled("Visual analysis continuation without image understanding declined.");
             };
 
-            auto create_analyzer = [&]() -> std::unique_ptr<ImageAnalyzer> {
-                return ImageAnalyzerFactory::create(*visual_backend, vision_settings);
-            };
-
             std::unique_ptr<ImageAnalyzer> analyzer;
             bool skip_visual_analysis = false;
             std::string skip_visual_reason;
-            try {
-                analyzer = create_analyzer();
-            } catch (const std::exception& ex) {
-                const bool retry_on_cpu = should_retry_on_cpu(ex);
-                if (app_.core_logger) {
-                    app_.core_logger->warn(
-                        "Visual analyzer initialization failed (retryable_on_cpu={}): {}",
-                        retry_on_cpu,
-                        ex.what());
-                }
-                if (!(allow_visual_cpu_fallback && retry_on_cpu)) {
+
+            if (is_remote) {
+                try {
+                    std::string base_url;
+                    std::string api_key;
+                    std::string model;
+                    if (app_.settings.get_llm_choice() == LLMChoice::Remote_OpenAI) {
+                        api_key = app_.settings.get_openai_api_key();
+                        model = app_.settings.get_openai_model();
+                    } else if (app_.settings.get_llm_choice() == LLMChoice::Remote_Custom) {
+                        const auto id = app_.settings.get_active_custom_api_id();
+                        const CustomApiEndpoint endpoint = app_.settings.find_custom_api_endpoint(id);
+                        base_url = endpoint.base_url;
+                        api_key = endpoint.api_key;
+                        model = endpoint.model;
+                    }
+
+                    OpenAICompatibleProvider::Config prov_cfg;
+                    prov_cfg.endpoint_url = base_url;
+                    prov_cfg.api_key = api_key;
+                    prov_cfg.default_model = model;
+                    prov_cfg.timeout = std::chrono::seconds(60);
+
+                    auto provider = std::make_shared<OpenAICompatibleProvider>(std::move(prov_cfg));
+                    if (app_.core_logger) {
+                        app_.core_logger->info("Using EndpointImageAnalyzer targeting '{}' with model '{}'",
+                                               EndpointUrlResolver::extract_host_display(base_url), model);
+                    }
+                    analyzer = std::make_unique<EndpointImageAnalyzer>(std::move(provider));
+                } catch (const std::exception& ex) {
                     skip_visual_analysis = true;
                     skip_visual_reason = ex.what();
                     if (app_.core_logger) {
+                        app_.core_logger->error("Endpoint image analyzer initialization failed: {}", ex.what());
+                    }
+                }
+            } else {
+                auto create_analyzer = [&]() -> std::unique_ptr<ImageAnalyzer> {
+                    return ImageAnalyzerFactory::create(*visual_backend, vision_settings);
+                };
+
+                try {
+                    analyzer = create_analyzer();
+                } catch (const std::exception& ex) {
+                    const bool retry_on_cpu = should_retry_on_cpu(ex);
+                    if (app_.core_logger) {
                         app_.core_logger->warn(
-                            "Visual analysis disabled after initialization failure.");
+                            "Visual analyzer initialization failed (retryable_on_cpu={}): {}",
+                            retry_on_cpu,
+                            ex.what());
                     }
-                } else {
-                    if (!visual_cpu_fallback_choice.has_value()) {
-                        visual_cpu_fallback_choice = app_.prompt_visual_cpu_fallback(ex.what());
-                    }
-                    if (!visual_cpu_fallback_choice.value()) {
-                        throw AnalysisCancelled("Visual CPU fallback declined.");
-                    } else {
-                        app_.append_progress(
-                            to_utf8(app_.tr("[VISION] Switching visual analysis to CPU.")));
-                        vision_settings.use_gpu = false;
-                        visual_cpu_fallback_active = true;
+                    if (!(allow_visual_cpu_fallback && retry_on_cpu)) {
+                        skip_visual_analysis = true;
+                        skip_visual_reason = ex.what();
                         if (app_.core_logger) {
                             app_.core_logger->warn(
-                                "Retrying visual analyzer initialization on CPU after GPU failure: {}",
-                                ex.what());
+                                "Visual analysis disabled after initialization failure.");
                         }
-                        try {
-                            analyzer = create_analyzer();
+                    } else {
+                        if (!visual_cpu_fallback_choice.has_value()) {
+                            visual_cpu_fallback_choice = app_.prompt_visual_cpu_fallback(ex.what());
+                        }
+                        if (!visual_cpu_fallback_choice.value()) {
+                            throw AnalysisCancelled("Visual CPU fallback declined.");
+                        } else {
+                            app_.append_progress(
+                                to_utf8(app_.tr("[VISION] Switching visual analysis to CPU.")));
+                            vision_settings.use_gpu = false;
+                            visual_cpu_fallback_active = true;
                             if (app_.core_logger) {
-                                app_.core_logger->info(
-                                    "Visual analyzer CPU fallback initialized successfully.");
+                                app_.core_logger->warn(
+                                    "Retrying visual analyzer initialization on CPU after GPU failure: {}",
+                                    ex.what());
                             }
-                        } catch (const std::exception& init_ex) {
-                            skip_visual_analysis = true;
-                            skip_visual_reason = init_ex.what();
-                            if (app_.core_logger) {
-                                app_.core_logger->error(
-                                    "Visual analyzer CPU fallback initialization failed: {}",
-                                    init_ex.what());
+                            try {
+                                analyzer = create_analyzer();
+                                if (app_.core_logger) {
+                                    app_.core_logger->info(
+                                        "Visual analyzer CPU fallback initialized successfully.");
+                                }
+                            } catch (const std::exception& init_ex) {
+                                skip_visual_analysis = true;
+                                skip_visual_reason = init_ex.what();
+                                if (app_.core_logger) {
+                                    app_.core_logger->error(
+                                        "Visual analyzer CPU fallback initialization failed: {}",
+                                        init_ex.what());
+                                }
                             }
                         }
                     }
