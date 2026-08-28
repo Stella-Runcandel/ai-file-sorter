@@ -32,7 +32,16 @@
 #include "MainAppUiBuilder.hpp"
 #include "MenuMnemonicController.hpp"
 #include "ReviewHistoryDialog.hpp"
+#if AI_FILE_SORTER_ENABLE_EMBEDDED_AI
 #include "SuitabilityBenchmarkDialog.hpp"
+#include "ggml-backend.h"
+#else
+class SuitabilityBenchmarkDialog {
+public:
+    virtual ~SuitabilityBenchmarkDialog() = default;
+};
+#endif
+
 #include "UiTranslator.hpp"
 #include "UpdaterBuildConfig.hpp"
 #include "SupportCodeManager.hpp"
@@ -41,7 +50,6 @@
 #include "WhitelistManagerDialog.hpp"
 #include "UndoManager.hpp"
 #include "WhitelistTestFixtures.hpp"
-#include "ggml-backend.h"
 
 #include <app_version.hpp>
 
@@ -117,7 +125,9 @@
 #include <vector>
 
 #include <fmt/format.h>
+#if AI_FILE_SORTER_ENABLE_EMBEDDED_AI
 #include <LocalLLMClient.hpp>
+#endif
 
 using namespace std::chrono_literals;
 
@@ -412,6 +422,7 @@ bool case_insensitive_contains(std::string_view haystack, std::string_view needl
     return it != haystack.end();
 }
 
+#if AI_FILE_SORTER_ENABLE_EMBEDDED_AI
 void load_status_ggml_backends_once()
 {
     GgmlRuntimePaths::ensure_ggml_backends_loaded(Logger::get_logger("core_logger"));
@@ -480,6 +491,12 @@ std::optional<std::string> detect_status_blas_backend_label()
 
     return std::nullopt;
 }
+#else
+void load_status_ggml_backends_once() {}
+bool status_backend_available(std::string_view /*backend_name*/) { return false; }
+std::optional<std::string> detect_status_blas_backend_label() { return std::nullopt; }
+#endif
+
 
 std::string detect_loaded_backend_key()
 {
@@ -1064,8 +1081,11 @@ void MainApp::set_app_icon()
 void MainApp::load_settings()
 {
     if (!settings.load()) {
-        core_logger->info("Failed to load settings, using defaults.");
+        if (core_logger) {
+            core_logger->info("Failed to load settings, using defaults.");
+        }
     }
+
     using_local_llm = !is_remote_choice(settings.get_llm_choice());
     if (development_mode_) {
         development_prompt_logging_enabled_ = settings.get_development_prompt_logging();
@@ -3277,6 +3297,7 @@ void MainApp::reset_learned_behavior()
 
 void MainApp::show_suitability_benchmark_dialog(bool /*auto_start*/)
 {
+#if AI_FILE_SORTER_ENABLE_EMBEDDED_AI
     if (benchmark_dialog) {
         benchmark_dialog->raise();
         benchmark_dialog->activateWindow();
@@ -3288,10 +3309,16 @@ void MainApp::show_suitability_benchmark_dialog(bool /*auto_start*/)
         benchmark_dialog.reset();
     });
     benchmark_dialog->show();
+#else
+    QMessageBox::information(this,
+                             tr("Benchmark Not Available"),
+                             tr("The local AI benchmark is not available in this endpoint-only build."));
+#endif
 }
 
 void MainApp::maybe_show_suitability_benchmark()
 {
+#if AI_FILE_SORTER_ENABLE_EMBEDDED_AI
     if (settings.get_suitability_benchmark_completed()) {
         return;
     }
@@ -3305,7 +3332,9 @@ void MainApp::maybe_show_suitability_benchmark()
     QTimer::singleShot(0, this, [this]() {
         show_suitability_benchmark_dialog(false);
     });
+#endif
 }
+
 
 void MainApp::maybe_show_whats_new_popup()
 {
@@ -3374,19 +3403,6 @@ void MainApp::apply_development_logging()
 std::unique_ptr<ILLMClient> MainApp::make_llm_client()
 {
     const LLMChoice choice = settings.get_llm_choice();
-    const auto handle_local_llm_status = [this](LocalLLMClient::Status status) {
-        schedule_backend_status_label_refresh();
-        switch (status) {
-            case LocalLLMClient::Status::GpuLowMemoryFallbackToCpu:
-                report_progress(to_utf8(
-                    tr("[WARN] Available GPU memory is too low for GPU acceleration. Continuing on CPU (slower).")));
-                return;
-            case LocalLLMClient::Status::GpuFallbackToCpu:
-                report_progress(to_utf8(
-                    tr("[WARN] GPU acceleration failed to initialize. Continuing on CPU (slower).")));
-                return;
-        }
-    };
 
     if (choice == LLMChoice::Remote_OpenAI) {
         const std::string api_key = settings.get_openai_api_key();
@@ -3425,6 +3441,21 @@ std::unique_ptr<ILLMClient> MainApp::make_llm_client()
         return client;
     }
 
+#if AI_FILE_SORTER_ENABLE_EMBEDDED_AI
+    const auto handle_local_llm_status = [this](LocalLLMClient::Status status) {
+        schedule_backend_status_label_refresh();
+        switch (status) {
+            case LocalLLMClient::Status::GpuLowMemoryFallbackToCpu:
+                report_progress(to_utf8(
+                    tr("[WARN] Available GPU memory is too low for GPU acceleration. Continuing on CPU (slower).")));
+                return;
+            case LocalLLMClient::Status::GpuFallbackToCpu:
+                report_progress(to_utf8(
+                    tr("[WARN] GPU acceleration failed to initialize. Continuing on CPU (slower).")));
+                return;
+        }
+    };
+
     if (choice == LLMChoice::Custom) {
         const auto id = settings.get_active_custom_llm_id();
         const CustomLLM custom = settings.find_custom_llm(id);
@@ -3457,7 +3488,15 @@ std::unique_ptr<ILLMClient> MainApp::make_llm_client()
     client->set_prompt_logging_enabled(should_log_prompts());
     schedule_backend_status_label_refresh();
     return client;
+#else
+    if (!is_remote_choice(choice)) {
+        throw std::runtime_error("Local embedded AI models are not available in this endpoint-only build. Please select an external AI endpoint (OpenAI, Gemini, or Custom API) in Settings.");
+    }
+    throw std::runtime_error("Unknown or unsupported AI provider selection.");
+#endif
+
 }
+
 
 void MainApp::notify_recategorization_reset(const std::vector<CategorizedFile>& entries,
                                             const std::string& reason)

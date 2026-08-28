@@ -97,6 +97,10 @@ struct ImageAnalyzerSettings {
     std::function<void(int32_t current_batch, int32_t total_batches)> batch_progress;
 };
 
+#include <algorithm>
+#include <cctype>
+#include <unordered_set>
+
 /**
  * @brief Polymorphic interface for visual backends that describe images.
  */
@@ -113,4 +117,24 @@ public:
      * @return Analysis result with description and suggested name.
      */
     virtual ImageAnalysisResult analyze(const std::filesystem::path& image_path) = 0;
+
+    /**
+     * @brief Returns true if the image path has a supported image extension.
+     * @param path Path to inspect.
+     * @return True when the file is a supported image.
+     */
+    static bool is_supported_image(const std::filesystem::path& path) {
+        if (!path.has_extension()) {
+            return false;
+        }
+        std::string ext = path.extension().string();
+        std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char ch) {
+            return static_cast<char>(std::tolower(ch));
+        });
+        static const std::unordered_set<std::string> kExtensions = {
+            ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".tga", ".psd", ".hdr",
+            ".pic", ".pnm", ".ppm", ".pgm", ".pbm"
+        };
+        return kExtensions.find(ext) != kExtensions.end();
+    }
 };

@@ -29,17 +29,29 @@ constexpr int kMaxImageDimension = 2048;
 constexpr int kJpegQuality = 85;
 
 std::string sanitize_suggested_filename(std::string name) {
-    name = Utils::sanitize_file_name(name);
+    while (!name.empty() && (name.front() == '"' || name.front() == '\'' || std::isspace(static_cast<unsigned char>(name.front())))) {
+        name.erase(name.begin());
+    }
+    while (!name.empty() && (name.back() == '"' || name.back() == '\'' || std::isspace(static_cast<unsigned char>(name.back())))) {
+        name.pop_back();
+    }
+    for (char& ch : name) {
+        if (ch == '/' || ch == '\\' || ch == ':' || ch == '*' || ch == '?' || ch == '"' || ch == '<' || ch == '>' || ch == '|') {
+            ch = '_';
+        }
+    }
     // Remove common file extension if model appended it
     const auto dot_pos = name.rfind('.');
     if (dot_pos != std::string::npos && dot_pos > 0) {
-        const std::string ext = name.substr(dot_pos);
+        std::string ext = name.substr(dot_pos);
+        std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
         if (ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".webp") {
             name = name.substr(0, dot_pos);
         }
     }
     return name;
 }
+
 
 std::pair<std::string, std::string> parse_vision_response(const std::string& raw_content) {
     std::string description;

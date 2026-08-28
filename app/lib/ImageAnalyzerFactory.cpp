@@ -1,7 +1,9 @@
 #include "ImageAnalyzerFactory.hpp"
 
 #include "GgufFileValidation.hpp"
+#if AI_FILE_SORTER_ENABLE_EMBEDDED_AI
 #include "LlavaImageAnalyzer.hpp"
+#endif
 #include "Logger.hpp"
 #include "Utils.hpp"
 
@@ -196,6 +198,7 @@ void run_visual_gpu_preflight(const VisualLlmRuntime::Backend& backend)
 std::unique_ptr<ImageAnalyzer> ImageAnalyzerFactory::create(const VisualLlmRuntime::Backend& backend,
                                                             ImageAnalyzerSettings settings)
 {
+#if AI_FILE_SORTER_ENABLE_EMBEDDED_AI
     if (!backend.descriptor) {
         throw std::runtime_error("Visual backend descriptor is missing.");
     }
@@ -225,4 +228,9 @@ std::unique_ptr<ImageAnalyzer> ImageAnalyzerFactory::create(const VisualLlmRunti
     }
 
     throw std::runtime_error("Unsupported visual model architecture.");
+#else
+    (void)backend;
+    (void)settings;
+    throw std::runtime_error("Local embedded visual model runtime is not available in this endpoint-only build. Please configure an external AI endpoint with vision support in settings.");
+#endif
 }

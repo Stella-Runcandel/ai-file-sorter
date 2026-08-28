@@ -1,0 +1,22 @@
+{
+  "name": "AI File Sorter Dev Container (Endpoint AI)",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "workspaceFolder": "/workspaces/ai-file-sorter",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/ai-file-sorter,type=bind",
+  "remoteUser": "vscode",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.cpptools",
+        "ms-vscode.cmake-tools",
+        "twxs.cmake"
+      ],
+      "settings": {
+        "cmake.buildDirectory": "${workspaceFolder}/build-linux",
+        "cmake.sourceDirectory": "${workspaceFolder}/app"
+      }
+    }
+  }
+}

@@ -79,7 +79,8 @@ TEST_CASE("EndpointImageAnalyzer - JSON Response Parsing and Filename Sanitizati
 
     // Verify the request sent to provider was multimodal
     CHECK(mock_provider->last_request.is_multimodal());
-    CHECK(mock_provider->last_request.messages().size() == 2);
+    CHECK(mock_provider->last_request.messages.size() == 2);
+
 
     std::filesystem::remove(temp_image);
 }

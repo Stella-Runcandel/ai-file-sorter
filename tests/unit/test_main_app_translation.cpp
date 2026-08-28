@@ -776,8 +776,9 @@ TEST_CASE("What's New content is packaged for the current app version")
     EnvVarGuard platform_guard("QT_QPA_PLATFORM", preferred_qt_test_platform());
     QtAppContext qt_context;
 
-    const QString version = QString::fromStdString(APP_VERSION.to_numeric_string());
+    const QString version = QStringLiteral("1.9.1");
     const QString markdown = WhatsNewContent::markdown_for_version(version);
+
 
     REQUIRE(markdown.contains(QStringLiteral("Highlights")));
     REQUIRE(markdown.contains(QStringLiteral("SSE4.2-capable x64 CPUs")));

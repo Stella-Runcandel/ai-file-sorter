@@ -666,6 +666,7 @@ int run_self_test_mode(const ParsedArguments& parsed_args)
 
 int run_visual_gpu_probe_mode(const ParsedArguments& parsed_args)
 {
+#if AI_FILE_SORTER_ENABLE_EMBEDDED_AI
     int qt_argc = static_cast<int>(parsed_args.qt_args.size()) - 1;
     char** qt_argv = const_cast<char**>(parsed_args.qt_args.data());
     QCoreApplication app(qt_argc, qt_argv);
@@ -693,7 +694,13 @@ int run_visual_gpu_probe_mode(const ParsedArguments& parsed_args)
         std::cerr << ex.what() << "\n";
         return EXIT_FAILURE;
     }
+#else
+    (void)parsed_args;
+    std::cerr << "Visual GPU probe is not available in endpoint-only build.\n";
+    return EXIT_FAILURE;
+#endif
 }
+
 
 int run_headless_mode(const ParsedArguments& parsed_args)
 {

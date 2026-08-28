@@ -90,7 +90,7 @@ TEST_CASE("OpenAICompatibleProvider - Response Deserialization", "[tier1][provid
                     "index": 0,
                     "message": {
                         "role": "assistant",
-                        "content": "{"category": "Finance", "subcategory": "Tax"}"
+                        "content": "{\"category\": \"Finance\", \"subcategory\": \"Tax\"}"
                     },
                     "finish_reason": "stop"
                 }
@@ -105,7 +105,7 @@ TEST_CASE("OpenAICompatibleProvider - Response Deserialization", "[tier1][provid
         AIResponse res = OpenAICompatibleProvider::deserialize_chat_response(payload, 200, 150);
 
         REQUIRE(res.is_success());
-        REQUIRE(res.text() == "{"category": "Finance", "subcategory": "Tax"}");
+        REQUIRE(res.text() == R"({"category": "Finance", "subcategory": "Tax"})");
         REQUIRE(res.model == "qwen2.5:7b");
         REQUIRE(res.finish_reason == "stop");
         REQUIRE(res.http_status == 200);
@@ -129,8 +129,9 @@ TEST_CASE("OpenAICompatibleProvider - Response Deserialization", "[tier1][provid
         REQUIRE(res.has_error());
         REQUIRE(res.is_auth_error());
         REQUIRE(res.http_status == 401);
-        REQUIRE(res.error_message.find("Incorrect API key") != std::string::npos);
+        REQUIRE(res.error_message->find("Incorrect API key") != std::string::npos);
     }
+
 
     SECTION("HTTP 429 Rate Limit error parsing") {
         const std::string err_payload = R"({"error": "Rate limit reached"})";

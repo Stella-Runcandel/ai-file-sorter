@@ -7,7 +7,9 @@
 #include "GeminiClient.hpp"
 #include "LLMClient.hpp"
 #include "LlmCatalog.hpp"
+#if AI_FILE_SORTER_ENABLE_EMBEDDED_AI
 #include "LocalLLMClient.hpp"
+#endif
 #include "Logger.hpp"
 #include "ResultsCoordinator.hpp"
 #include "UserLearningStore.hpp"
@@ -302,18 +304,6 @@ FileScanOptions HeadlessAnalysisWorkflowHost::effective_scan_options() const
 std::unique_ptr<ILLMClient> HeadlessAnalysisWorkflowHost::make_llm_client()
 {
     const LLMChoice choice = settings_.get_llm_choice();
-    const auto handle_local_llm_status = [this](LocalLLMClient::Status status) {
-        switch (status) {
-        case LocalLLMClient::Status::GpuLowMemoryFallbackToCpu:
-            append_progress(to_utf8(translate_main_app(
-                "[WARN] Available GPU memory is too low for GPU acceleration. Continuing on CPU (slower).")));
-            return;
-        case LocalLLMClient::Status::GpuFallbackToCpu:
-            append_progress(to_utf8(translate_main_app(
-                "[WARN] GPU acceleration failed to initialize. Continuing on CPU (slower).")));
-            return;
-        }
-    };
 
     if (choice == LLMChoice::Unset) {
         throw std::runtime_error(
@@ -326,8 +316,7 @@ std::unique_ptr<ILLMClient> HeadlessAnalysisWorkflowHost::make_llm_client()
         if (api_key.empty()) {
             throw std::runtime_error("OpenAI API key is missing. Please add it from Select LLM.");
         }
-        CategorizationSession session(api_key, model);
-        return std::make_unique<LLMClient>(session.create_llm_client());
+        return std::make_unique<LLMClient>(api_key, model);
     }
 
     if (choice == LLMChoice::Remote_Gemini) {
@@ -347,6 +336,20 @@ std::unique_ptr<ILLMClient> HeadlessAnalysisWorkflowHost::make_llm_client()
         }
         return std::make_unique<LLMClient>(endpoint.api_key, endpoint.model, endpoint.base_url);
     }
+
+#if AI_FILE_SORTER_ENABLE_EMBEDDED_AI
+    const auto handle_local_llm_status = [this](LocalLLMClient::Status status) {
+        switch (status) {
+        case LocalLLMClient::Status::GpuLowMemoryFallbackToCpu:
+            append_progress(to_utf8(translate_main_app(
+                "[WARN] Available GPU memory is too low for GPU acceleration. Continuing on CPU (slower).")));
+            return;
+        case LocalLLMClient::Status::GpuFallbackToCpu:
+            append_progress(to_utf8(translate_main_app(
+                "[WARN] GPU acceleration failed to initialize. Continuing on CPU (slower).")));
+            return;
+        }
+    };
 
     if (choice == LLMChoice::Custom) {
         const auto id = settings_.get_active_custom_llm_id();
@@ -374,7 +377,15 @@ std::unique_ptr<ILLMClient> HeadlessAnalysisWorkflowHost::make_llm_client()
         [this](const std::string& reason) { return prompt_text_cpu_fallback(reason); });
     client->set_status_callback(handle_local_llm_status);
     return client;
+#else
+    if (!is_remote_choice(choice)) {
+        throw std::runtime_error("Local embedded AI models are not available in this endpoint-only build. Please select an external AI endpoint in settings.");
+    }
+    throw std::runtime_error("Unknown or unsupported AI provider selection.");
+#endif
 }
+
+
 
 void HeadlessAnalysisWorkflowHost::initialize_whitelists()
 {

@@ -74,7 +74,9 @@ public:
      * @param path Path to inspect.
      * @return True when the file is supported.
      */
-    static bool is_supported_image(const std::filesystem::path& path);
+    static bool is_supported_image(const std::filesystem::path& path) {
+        return ImageAnalyzer::is_supported_image(path);
+    }
 
 private:
 #ifdef AI_FILE_SORTER_HAS_MTMD

@@ -79,7 +79,7 @@ std::string OpenAICompatibleProvider::serialize_chat_request(const AIRequest& re
     Json::Value messages_array(Json::arrayValue);
     for (const auto& msg : request.messages) {
         Json::Value msg_obj(Json::objectValue);
-        msg_obj["role"] = std::string(to_string(msg.role));
+        msg_obj["role"] = std::string(role_to_string(msg.role));
 
         if (!msg.is_multimodal()) {
             // Standard single-part text message

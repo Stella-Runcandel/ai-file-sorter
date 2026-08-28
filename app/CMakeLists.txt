@@ -8,6 +8,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(AI_FILE_SORTER_BUILD_TESTS "Build unit tests (requires Catch2 submodule)" OFF)
+option(AI_FILE_SORTER_ENABLE_EMBEDDED_AI
+    "Build legacy embedded llama.cpp local AI runtime" OFF)
 option(AI_FILE_SORTER_ENABLE_LIVE_LLM_TESTS
     "Register opt-in headless tests that run real local LLM models against real files." OFF)
 option(AI_FILE_SORTER_REQUIRE_EMBEDDED_PDF_BACKEND
@@ -457,9 +459,23 @@ else()
     if(PkgConfig_FOUND)
         pkg_check_modules(MEDIAINFO QUIET IMPORTED_TARGET libmediainfo)
         if(TARGET PkgConfig::MEDIAINFO)
+            get_target_property(_aifs_mi_inc PkgConfig::MEDIAINFO INTERFACE_INCLUDE_DIRECTORIES)
+            if(_aifs_mi_inc)
+                set(_aifs_mi_valid_inc "")
+                foreach(_d IN LISTS _aifs_mi_inc)
+                    if(EXISTS "${_d}")
+                        list(APPEND _aifs_mi_valid_inc "${_d}")
+                    endif()
+                endforeach()
+                set_target_properties(PkgConfig::MEDIAINFO PROPERTIES
+                    INTERFACE_INCLUDE_DIRECTORIES "${_aifs_mi_valid_inc}")
+                unset(_aifs_mi_valid_inc)
+            endif()
+            unset(_aifs_mi_inc)
             list(APPEND MEDIAINFO_DEPS_LIBS PkgConfig::MEDIAINFO)
         endif()
     endif()
+
     if(NOT MEDIAINFO_DEPS_LIBS AND APPLE)
         set(_aifs_mediainfo_prefixes "")
         if(DEFINED ENV{HOMEBREW_PREFIX} AND NOT "$ENV{HOMEBREW_PREFIX}" STREQUAL "")
@@ -656,7 +672,17 @@ file(GLOB APP_LIB_SOURCES CONFIGURE_DEPENDS
 set(AIFS_TEST_ONLY_APP_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/lib/MainAppTestAccess.cpp"
 )
+set(AIFS_EMBEDDED_AI_LIB_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/lib/LocalLLMClient.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/lib/LlavaImageAnalyzer.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/lib/VisualLlmRuntime.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/lib/GgmlRuntimePaths.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/lib/SuitabilityBenchmarkDialog.cpp"
+)
 list(REMOVE_ITEM APP_LIB_SOURCES ${AIFS_TEST_ONLY_APP_SOURCES})
+if(NOT AI_FILE_SORTER_ENABLE_EMBEDDED_AI)
+    list(REMOVE_ITEM APP_LIB_SOURCES ${AIFS_EMBEDDED_AI_LIB_SOURCES})
+endif()
 file(GLOB APP_HEADER_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/include/*.hpp"
 )
@@ -694,10 +720,15 @@ aifs_apply_update_mode(aifilesorter)
 
 target_include_directories(aifilesorter PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/include/llama"
-    "${CMAKE_CURRENT_SOURCE_DIR}/include/external/llama.cpp/tools/mtmd"
     ${DOC_DEPS_INCLUDE_DIRS}
 )
+if(AI_FILE_SORTER_ENABLE_EMBEDDED_AI)
+    target_include_directories(aifilesorter PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/llama"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/external/llama.cpp/tools/mtmd"
+    )
+endif()
+
 
 if(_aifs_enable_translation_generation)
     qt_add_lupdate(
@@ -862,150 +893,155 @@ qt_add_resources(aifilesorter "app_resources"
     FILES ${APP_RESOURCE_FILES}
 )
 
-if(WIN32)
-    if(DEFINED ENV{WindowsSdkDir} AND DEFINED ENV{WindowsSDKLibVersion})
-        set(WIN_SDK_UM_DIR "$ENV{WindowsSdkDir}Lib/$ENV{WindowsSDKLibVersion}/um/x64")
-        set(WIN_SDK_UCRT_DIR "$ENV{WindowsSdkDir}Lib/$ENV{WindowsSDKLibVersion}/ucrt/x64")
-        if(EXISTS "${WIN_SDK_UM_DIR}")
-            link_directories("${WIN_SDK_UM_DIR}")
+if(AI_FILE_SORTER_ENABLE_EMBEDDED_AI)
+    target_compile_definitions(aifilesorter PRIVATE AI_FILE_SORTER_ENABLE_EMBEDDED_AI=1)
+    if(WIN32)
+        if(DEFINED ENV{WindowsSdkDir} AND DEFINED ENV{WindowsSDKLibVersion})
+            set(WIN_SDK_UM_DIR "$ENV{WindowsSdkDir}Lib/$ENV{WindowsSDKLibVersion}/um/x64")
+            set(WIN_SDK_UCRT_DIR "$ENV{WindowsSdkDir}Lib/$ENV{WindowsSDKLibVersion}/ucrt/x64")
+            if(EXISTS "${WIN_SDK_UM_DIR}")
+                link_directories("${WIN_SDK_UM_DIR}")
+            endif()
+            if(EXISTS "${WIN_SDK_UCRT_DIR}")
+                link_directories("${WIN_SDK_UCRT_DIR}")
+            endif()
         endif()
-        if(EXISTS "${WIN_SDK_UCRT_DIR}")
-            link_directories("${WIN_SDK_UCRT_DIR}")
-        endif()
-    endif()
 
-    set(PRECOMPILED_CPU_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/lib/precompiled/cpu/lib")
-    set(PRECOMPILED_CPU_BIN_DIR "${CMAKE_CURRENT_SOURCE_DIR}/lib/precompiled/cpu/bin")
-    set(PRECOMPILED_CUDA_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/lib/precompiled/cuda/lib")
-    set(PRECOMPILED_CUDA_BIN_DIR "${CMAKE_CURRENT_SOURCE_DIR}/lib/precompiled/cuda/bin")
-    set(PRECOMPILED_VULKAN_ROOT_DIR "")
-    foreach(_aifs_precompiled_vulkan_candidate
-            "${CMAKE_CURRENT_SOURCE_DIR}/lib/precompiled/vulkan-blas"
-            "${CMAKE_CURRENT_SOURCE_DIR}/lib/precompiled/vulkan")
-        if(EXISTS "${_aifs_precompiled_vulkan_candidate}/bin")
-            set(PRECOMPILED_VULKAN_ROOT_DIR "${_aifs_precompiled_vulkan_candidate}")
-            break()
+        set(PRECOMPILED_CPU_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/lib/precompiled/cpu/lib")
+        set(PRECOMPILED_CPU_BIN_DIR "${CMAKE_CURRENT_SOURCE_DIR}/lib/precompiled/cpu/bin")
+        set(PRECOMPILED_CUDA_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/lib/precompiled/cuda/lib")
+        set(PRECOMPILED_CUDA_BIN_DIR "${CMAKE_CURRENT_SOURCE_DIR}/lib/precompiled/cuda/bin")
+        set(PRECOMPILED_VULKAN_ROOT_DIR "")
+        foreach(_aifs_precompiled_vulkan_candidate
+                "${CMAKE_CURRENT_SOURCE_DIR}/lib/precompiled/vulkan-blas"
+                "${CMAKE_CURRENT_SOURCE_DIR}/lib/precompiled/vulkan")
+            if(EXISTS "${_aifs_precompiled_vulkan_candidate}/bin")
+                set(PRECOMPILED_VULKAN_ROOT_DIR "${_aifs_precompiled_vulkan_candidate}")
+                break()
+            endif()
+        endforeach()
+        if(PRECOMPILED_VULKAN_ROOT_DIR STREQUAL "")
+            set(PRECOMPILED_VULKAN_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/lib/precompiled/vulkan-blas")
         endif()
-    endforeach()
-    if(PRECOMPILED_VULKAN_ROOT_DIR STREQUAL "")
-        set(PRECOMPILED_VULKAN_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/lib/precompiled/vulkan-blas")
-    endif()
-    set(PRECOMPILED_VULKAN_LIB_DIR "${PRECOMPILED_VULKAN_ROOT_DIR}/lib")
-    set(PRECOMPILED_VULKAN_BIN_DIR "${PRECOMPILED_VULKAN_ROOT_DIR}/bin")
-    set(LLAMA_CPU_IMPORT "${PRECOMPILED_CPU_LIB_DIR}/llama.lib")
-    set(LLAMA_CPU_DLL "${PRECOMPILED_CPU_BIN_DIR}/llama.dll")
-    if(NOT EXISTS "${LLAMA_CPU_IMPORT}")
-        message(FATAL_ERROR "Missing ${LLAMA_CPU_IMPORT}. Run app/scripts/build_llama_windows.ps1 cuda=off vcpkgroot=<path> first.")
-    endif()
-    if(NOT EXISTS "${LLAMA_CPU_DLL}")
-        message(FATAL_ERROR "Missing ${LLAMA_CPU_DLL}. Run app/scripts/build_llama_windows.ps1 cuda=off vcpkgroot=<path> to stage runtime DLLs.")
-    endif()
-    add_library(llama SHARED IMPORTED)
-    set_target_properties(llama PROPERTIES
-        IMPORTED_IMPLIB "${LLAMA_CPU_IMPORT}"
-        IMPORTED_LOCATION "${LLAMA_CPU_DLL}"
-    )
-
-    foreach(libName IN ITEMS ggml ggml-base ggml-cpu)
-        set(import_path "${PRECOMPILED_CPU_LIB_DIR}/${libName}.lib")
-        set(dll_path "${PRECOMPILED_CPU_BIN_DIR}/${libName}.dll")
-        if(NOT EXISTS "${import_path}")
-            message(FATAL_ERROR "Missing ${import_path}. Run app/scripts/build_llama_windows.ps1 cuda=off vcpkgroot=<path> first.")
+        set(PRECOMPILED_VULKAN_LIB_DIR "${PRECOMPILED_VULKAN_ROOT_DIR}/lib")
+        set(PRECOMPILED_VULKAN_BIN_DIR "${PRECOMPILED_VULKAN_ROOT_DIR}/bin")
+        set(LLAMA_CPU_IMPORT "${PRECOMPILED_CPU_LIB_DIR}/llama.lib")
+        set(LLAMA_CPU_DLL "${PRECOMPILED_CPU_BIN_DIR}/llama.dll")
+        if(NOT EXISTS "${LLAMA_CPU_IMPORT}")
+            message(FATAL_ERROR "Missing ${LLAMA_CPU_IMPORT}. Run app/scripts/build_llama_windows.ps1 cuda=off vcpkgroot=<path> first.")
         endif()
-        if(NOT EXISTS "${dll_path}")
-            message(FATAL_ERROR "Missing ${dll_path}. Run app/scripts/build_llama_windows.ps1 cuda=off vcpkgroot=<path> to stage runtime DLLs.")
+        if(NOT EXISTS "${LLAMA_CPU_DLL}")
+            message(FATAL_ERROR "Missing ${LLAMA_CPU_DLL}. Run app/scripts/build_llama_windows.ps1 cuda=off vcpkgroot=<path> to stage runtime DLLs.")
         endif()
-        string(REPLACE "-" "_" imported_target "${libName}")
-        add_library(${imported_target} SHARED IMPORTED)
-        set_target_properties(${imported_target} PROPERTIES
-            IMPORTED_IMPLIB "${import_path}"
-            IMPORTED_LOCATION "${dll_path}"
+        add_library(llama SHARED IMPORTED)
+        set_target_properties(llama PROPERTIES
+            IMPORTED_IMPLIB "${LLAMA_CPU_IMPORT}"
+            IMPORTED_LOCATION "${LLAMA_CPU_DLL}"
         )
-    endforeach()
 
-    set(MTMD_IMPORT "${PRECOMPILED_CPU_LIB_DIR}/mtmd.lib")
-    set(MTMD_DLL "${PRECOMPILED_CPU_BIN_DIR}/mtmd.dll")
-    if(EXISTS "${MTMD_IMPORT}" AND EXISTS "${MTMD_DLL}")
-        add_library(mtmd SHARED IMPORTED)
-        set_target_properties(mtmd PROPERTIES
-            IMPORTED_IMPLIB "${MTMD_IMPORT}"
-            IMPORTED_LOCATION "${MTMD_DLL}"
-        )
+        foreach(libName IN ITEMS ggml ggml-base ggml-cpu)
+            set(import_path "${PRECOMPILED_CPU_LIB_DIR}/${libName}.lib")
+            set(dll_path "${PRECOMPILED_CPU_BIN_DIR}/${libName}.dll")
+            if(NOT EXISTS "${import_path}")
+                message(FATAL_ERROR "Missing ${import_path}. Run app/scripts/build_llama_windows.ps1 cuda=off vcpkgroot=<path> first.")
+            endif()
+            if(NOT EXISTS "${dll_path}")
+                message(FATAL_ERROR "Missing ${dll_path}. Run app/scripts/build_llama_windows.ps1 cuda=off vcpkgroot=<path> to stage runtime DLLs.")
+            endif()
+            string(REPLACE "-" "_" imported_target "${libName}")
+            add_library(${imported_target} SHARED IMPORTED)
+            set_target_properties(${imported_target} PROPERTIES
+                IMPORTED_IMPLIB "${import_path}"
+                IMPORTED_LOCATION "${dll_path}"
+            )
+        endforeach()
+
+        set(MTMD_IMPORT "${PRECOMPILED_CPU_LIB_DIR}/mtmd.lib")
+        set(MTMD_DLL "${PRECOMPILED_CPU_BIN_DIR}/mtmd.dll")
+        if(EXISTS "${MTMD_IMPORT}" AND EXISTS "${MTMD_DLL}")
+            add_library(mtmd SHARED IMPORTED)
+            set_target_properties(mtmd PROPERTIES
+                IMPORTED_IMPLIB "${MTMD_IMPORT}"
+                IMPORTED_LOCATION "${MTMD_DLL}"
+            )
+            target_compile_definitions(aifilesorter PRIVATE AI_FILE_SORTER_HAS_MTMD)
+            set(_aifs_saved_required_libs "${CMAKE_REQUIRED_LIBRARIES}")
+            set(CMAKE_REQUIRED_LIBRARIES "${MTMD_IMPORT}")
+            check_cxx_source_compiles([[
+                extern "C" void mtmd_helper_set_progress_callback(void*, void*);
+                int main() {
+                    mtmd_helper_set_progress_callback(0, 0);
+                    return 0;
+                }
+            ]] HAVE_MTMD_HELPER_SET_PROGRESS_CALLBACK)
+            check_cxx_source_compiles([[
+                extern "C" void mtmd_helper_log_set(void*, void*);
+                int main() {
+                    mtmd_helper_log_set(0, 0);
+                    return 0;
+                }
+            ]] HAVE_MTMD_HELPER_LOG_SET)
+            set(CMAKE_REQUIRED_LIBRARIES "${_aifs_saved_required_libs}")
+            unset(_aifs_saved_required_libs)
+            if(HAVE_MTMD_HELPER_SET_PROGRESS_CALLBACK)
+                target_compile_definitions(aifilesorter PRIVATE AI_FILE_SORTER_MTMD_PROGRESS_CALLBACK)
+            endif()
+            if(HAVE_MTMD_HELPER_LOG_SET)
+                target_compile_definitions(aifilesorter PRIVATE AI_FILE_SORTER_MTMD_LOG_CALLBACK)
+            endif()
+        else()
+            message(WARNING "Visual LLM support disabled: missing mtmd.lib/mtmd.dll under app/lib/precompiled/cpu. Run app/scripts/build_llama_windows.ps1 to stage mtmd.")
+        endif()
+    else()
+        # Build llama.cpp from the included submodule for non-Windows platforms
+        set(LLAMA_BUILD_COMMON ON CACHE BOOL "llama: build common utils library" FORCE)
+        set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared libs" FORCE)
+        if(UNIX AND NOT APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|X86_64|amd64|AMD64)$")
+            # Keep x64 Linux builds compatible with older SSE4.2-capable CPUs instead of
+            # auto-targeting AVX/F16C/FMA/AVX2/BMI2 based on the build host.
+            set(GGML_NATIVE OFF CACHE BOOL "ggml: optimize the build for the current system" FORCE)
+            set(GGML_SSE42 ON CACHE BOOL "ggml: enable SSE 4.2" FORCE)
+            set(GGML_F16C OFF CACHE BOOL "ggml: enable F16C" FORCE)
+            set(GGML_FMA OFF CACHE BOOL "ggml: enable FMA" FORCE)
+            set(GGML_AVX OFF CACHE BOOL "ggml: enable AVX" FORCE)
+            set(GGML_AVX_VNNI OFF CACHE BOOL "ggml: enable AVX-VNNI" FORCE)
+            set(GGML_AVX2 OFF CACHE BOOL "ggml: enable AVX2" FORCE)
+            set(GGML_BMI2 OFF CACHE BOOL "ggml: enable BMI2" FORCE)
+            set(GGML_AVX512 OFF CACHE BOOL "ggml: enable AVX512F" FORCE)
+            set(GGML_AVX512_VBMI OFF CACHE BOOL "ggml: enable AVX512-VBMI" FORCE)
+            set(GGML_AVX512_VNNI OFF CACHE BOOL "ggml: enable AVX512-VNNI" FORCE)
+            set(GGML_AVX512_BF16 OFF CACHE BOOL "ggml: enable AVX512-BF16" FORCE)
+        endif()
+        add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/include/external/llama.cpp" "${CMAKE_CURRENT_BINARY_DIR}/llama-build")
+        get_directory_property(_llama_install_version DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/llama-build" DEFINITION LLAMA_INSTALL_VERSION)
+        if (NOT _llama_install_version OR _llama_install_version STREQUAL "LLAMA_INSTALL_VERSION-NOTFOUND")
+            set(_llama_install_version "0.0.0")
+        endif()
+        set(LLAMA_INSTALL_VERSION "${_llama_install_version}")
+        add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/include/external/llama.cpp/tools/mtmd" "${CMAKE_CURRENT_BINARY_DIR}/mtmd-build")
+        target_link_libraries(aifilesorter PRIVATE llama)
+        target_link_libraries(aifilesorter PRIVATE mtmd)
         target_compile_definitions(aifilesorter PRIVATE AI_FILE_SORTER_HAS_MTMD)
-        set(_aifs_saved_required_libs "${CMAKE_REQUIRED_LIBRARIES}")
-        set(CMAKE_REQUIRED_LIBRARIES "${MTMD_IMPORT}")
-        check_cxx_source_compiles([[
-            extern "C" void mtmd_helper_set_progress_callback(void*, void*);
-            int main() {
-                mtmd_helper_set_progress_callback(0, 0);
-                return 0;
-            }
-        ]] HAVE_MTMD_HELPER_SET_PROGRESS_CALLBACK)
-        check_cxx_source_compiles([[
-            extern "C" void mtmd_helper_log_set(void*, void*);
-            int main() {
-                mtmd_helper_log_set(0, 0);
-                return 0;
-            }
-        ]] HAVE_MTMD_HELPER_LOG_SET)
-        set(CMAKE_REQUIRED_LIBRARIES "${_aifs_saved_required_libs}")
-        unset(_aifs_saved_required_libs)
+        set(CMAKE_REQUIRED_INCLUDES
+            "${CMAKE_CURRENT_SOURCE_DIR}/include/external/llama.cpp/tools/mtmd"
+            "${CMAKE_CURRENT_SOURCE_DIR}/include/external/llama.cpp/include"
+            "${CMAKE_CURRENT_SOURCE_DIR}/include/external/llama.cpp/ggml/include"
+        )
+        check_symbol_exists(mtmd_helper_set_progress_callback "mtmd-helper.h" HAVE_MTMD_HELPER_SET_PROGRESS_CALLBACK)
+        check_symbol_exists(mtmd_helper_log_set "mtmd-helper.h" HAVE_MTMD_HELPER_LOG_SET)
+        set(CMAKE_REQUIRED_INCLUDES)
         if(HAVE_MTMD_HELPER_SET_PROGRESS_CALLBACK)
             target_compile_definitions(aifilesorter PRIVATE AI_FILE_SORTER_MTMD_PROGRESS_CALLBACK)
         endif()
         if(HAVE_MTMD_HELPER_LOG_SET)
             target_compile_definitions(aifilesorter PRIVATE AI_FILE_SORTER_MTMD_LOG_CALLBACK)
         endif()
-    else()
-        message(WARNING "Visual LLM support disabled: missing mtmd.lib/mtmd.dll under app/lib/precompiled/cpu. Run app/scripts/build_llama_windows.ps1 to stage mtmd.")
+        if(MSVC)
+            target_compile_options(llama PRIVATE /Zc:char8_t-)
+        endif()
     endif()
 else()
-    # Build llama.cpp from the included submodule for non-Windows platforms
-    set(LLAMA_BUILD_COMMON ON CACHE BOOL "llama: build common utils library" FORCE)
-    set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared libs" FORCE)
-    if(UNIX AND NOT APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|X86_64|amd64|AMD64)$")
-        # Keep x64 Linux builds compatible with older SSE4.2-capable CPUs instead of
-        # auto-targeting AVX/F16C/FMA/AVX2/BMI2 based on the build host.
-        set(GGML_NATIVE OFF CACHE BOOL "ggml: optimize the build for the current system" FORCE)
-        set(GGML_SSE42 ON CACHE BOOL "ggml: enable SSE 4.2" FORCE)
-        set(GGML_F16C OFF CACHE BOOL "ggml: enable F16C" FORCE)
-        set(GGML_FMA OFF CACHE BOOL "ggml: enable FMA" FORCE)
-        set(GGML_AVX OFF CACHE BOOL "ggml: enable AVX" FORCE)
-        set(GGML_AVX_VNNI OFF CACHE BOOL "ggml: enable AVX-VNNI" FORCE)
-        set(GGML_AVX2 OFF CACHE BOOL "ggml: enable AVX2" FORCE)
-        set(GGML_BMI2 OFF CACHE BOOL "ggml: enable BMI2" FORCE)
-        set(GGML_AVX512 OFF CACHE BOOL "ggml: enable AVX512F" FORCE)
-        set(GGML_AVX512_VBMI OFF CACHE BOOL "ggml: enable AVX512-VBMI" FORCE)
-        set(GGML_AVX512_VNNI OFF CACHE BOOL "ggml: enable AVX512-VNNI" FORCE)
-        set(GGML_AVX512_BF16 OFF CACHE BOOL "ggml: enable AVX512-BF16" FORCE)
-    endif()
-    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/include/external/llama.cpp" "${CMAKE_CURRENT_BINARY_DIR}/llama-build")
-    get_directory_property(_llama_install_version DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/llama-build" DEFINITION LLAMA_INSTALL_VERSION)
-    if (NOT _llama_install_version OR _llama_install_version STREQUAL "LLAMA_INSTALL_VERSION-NOTFOUND")
-        set(_llama_install_version "0.0.0")
-    endif()
-    set(LLAMA_INSTALL_VERSION "${_llama_install_version}")
-    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/include/external/llama.cpp/tools/mtmd" "${CMAKE_CURRENT_BINARY_DIR}/mtmd-build")
-    target_link_libraries(aifilesorter PRIVATE llama)
-    target_link_libraries(aifilesorter PRIVATE mtmd)
-    target_compile_definitions(aifilesorter PRIVATE AI_FILE_SORTER_HAS_MTMD)
-    set(CMAKE_REQUIRED_INCLUDES
-        "${CMAKE_CURRENT_SOURCE_DIR}/include/external/llama.cpp/tools/mtmd"
-        "${CMAKE_CURRENT_SOURCE_DIR}/include/external/llama.cpp/include"
-        "${CMAKE_CURRENT_SOURCE_DIR}/include/external/llama.cpp/ggml/include"
-    )
-    check_symbol_exists(mtmd_helper_set_progress_callback "mtmd-helper.h" HAVE_MTMD_HELPER_SET_PROGRESS_CALLBACK)
-    check_symbol_exists(mtmd_helper_log_set "mtmd-helper.h" HAVE_MTMD_HELPER_LOG_SET)
-    set(CMAKE_REQUIRED_INCLUDES)
-    if(HAVE_MTMD_HELPER_SET_PROGRESS_CALLBACK)
-        target_compile_definitions(aifilesorter PRIVATE AI_FILE_SORTER_MTMD_PROGRESS_CALLBACK)
-    endif()
-    if(HAVE_MTMD_HELPER_LOG_SET)
-        target_compile_definitions(aifilesorter PRIVATE AI_FILE_SORTER_MTMD_LOG_CALLBACK)
-    endif()
-    if(MSVC)
-        target_compile_options(llama PRIVATE /Zc:char8_t-)
-    endif()
+    target_compile_definitions(aifilesorter PRIVATE AI_FILE_SORTER_ENABLE_EMBEDDED_AI=0)
 endif()
 
 # Link libraries
@@ -1018,20 +1054,23 @@ target_link_libraries(aifilesorter PRIVATE
     fmt::fmt
     spdlog::spdlog
     Intl::Intl
-    llama           # imported on Windows or built from submodule on other platforms
     ${MEDIAINFO_DEPS_LIBS}
     ${DOC_DEPS_LIBS}
 )
+if(AI_FILE_SORTER_ENABLE_EMBEDDED_AI)
+    target_link_libraries(aifilesorter PRIVATE llama)
+    if(WIN32)
+        target_link_libraries(aifilesorter PRIVATE ggml ggml_base ggml_cpu)
+        if(TARGET mtmd)
+            target_link_libraries(aifilesorter PRIVATE mtmd)
+        endif()
+    endif()
+endif()
+
 target_compile_definitions(aifilesorter PRIVATE
     AIFS_STORAGE_PLUGIN_CATALOG_URL="${AI_FILE_SORTER_STORAGE_PLUGIN_CATALOG_URL}"
 )
 
-if(WIN32)
-    target_link_libraries(aifilesorter PRIVATE ggml ggml_base ggml_cpu)
-    if(TARGET mtmd)
-        target_link_libraries(aifilesorter PRIVATE mtmd)
-    endif()
-endif()
 
 if(_aifs_pdfium_ready)
     if(PDFIUM_RUNTIME AND EXISTS "${PDFIUM_RUNTIME}")
@@ -1500,8 +1539,8 @@ if(AI_FILE_SORTER_BUILD_TESTS)
     )
     target_include_directories(aifs_onedrive_storage_plugin PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
-        "${CMAKE_CURRENT_SOURCE_DIR}/include/llama"
     )
+
     target_link_libraries(aifs_onedrive_storage_plugin PRIVATE
         Qt6::Core
         CURL::libcurl
@@ -1521,7 +1560,7 @@ if(AI_FILE_SORTER_BUILD_TESTS)
     )
     add_dependencies(aifilesorter aifs_onedrive_storage_plugin)
 
-    aifs_add_windows_test_executable(ai_file_sorter_tests
+    set(AIFS_COMMON_TEST_SOURCES
         ${APP_LIB_SOURCES}
         ${AIFS_TEST_ONLY_APP_SOURCES}
         "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_utils.cpp"
@@ -1532,28 +1571,18 @@ if(AI_FILE_SORTER_BUILD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_openai_compatible_provider.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_endpoint_image_analyzer.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_protected_project_detector.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_local_llm_backend.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_local_llm_prompt_builder.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_ggml_runtime_paths.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_llm_downloader.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_custom_llm.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_category_date_suffix.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_app_theme.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_category_language_support.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_llm_selection_dialog_local.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_update_feed.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_updater.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_updater_build_modes.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_version.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_visual_llm_runtime.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_llm_selection_visual_backend_model.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_llm_selection_dialog_visual.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_main_app_category_language_menu.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_main_app_translation.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_main_app_image_options.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_main_app_storage_support.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_main_app_progress_controller.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_main_app_visual_fallback.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_settings_image_options.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_windows_network_locations.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_ui_translator.cpp"
@@ -1577,16 +1606,35 @@ if(AI_FILE_SORTER_BUILD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_cache_interactions.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_image_rename_metadata_service.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_filename_localization_service.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_llava_image_analyzer.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_image_analyzer_factory.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_media_rename_metadata_service.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_analysis_runtime_lock.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_headless_analysis_command.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_headless_settings_overrides_json.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_headless_status_json.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_single_instance_coordinator.cpp"
+    )
+
+    set(AIFS_EMBEDDED_AI_TEST_SOURCES
+        "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_local_llm_backend.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_local_llm_prompt_builder.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_ggml_runtime_paths.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_llm_downloader.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_custom_llm.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_llm_selection_dialog_local.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_visual_llm_runtime.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_llm_selection_visual_backend_model.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_llm_selection_dialog_visual.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_main_app_visual_fallback.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_llava_image_analyzer.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_image_analyzer_factory.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_windows_cuda_probe.cpp"
     )
+
+    if(AI_FILE_SORTER_ENABLE_EMBEDDED_AI)
+        list(APPEND AIFS_COMMON_TEST_SOURCES ${AIFS_EMBEDDED_AI_TEST_SOURCES})
+    endif()
+
+    aifs_add_windows_test_executable(ai_file_sorter_tests ${AIFS_COMMON_TEST_SOURCES})
 
     aifs_add_windows_test_executable(aifs_storage_plugin_stub
         "${CMAKE_CURRENT_SOURCE_DIR}/../tests/helpers/storage_plugin_stub.cpp"
@@ -1598,10 +1646,14 @@ if(AI_FILE_SORTER_BUILD_TESTS)
 
     target_include_directories(ai_file_sorter_tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
-        "${CMAKE_CURRENT_SOURCE_DIR}/include/llama"
         "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit"
         ${DOC_DEPS_INCLUDE_DIRS}
     )
+    if(AI_FILE_SORTER_ENABLE_EMBEDDED_AI)
+        target_include_directories(ai_file_sorter_tests PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include/llama"
+        )
+    endif()
 
     target_link_libraries(ai_file_sorter_tests PRIVATE
         Catch2::Catch2WithMain
@@ -1615,10 +1667,15 @@ if(AI_FILE_SORTER_BUILD_TESTS)
         spdlog::spdlog
         fmt::fmt
         Intl::Intl
-        llama
         ${MEDIAINFO_DEPS_LIBS}
         ${DOC_DEPS_LIBS}
     )
+    if(AI_FILE_SORTER_ENABLE_EMBEDDED_AI)
+        target_link_libraries(ai_file_sorter_tests PRIVATE llama)
+        target_compile_definitions(ai_file_sorter_tests PRIVATE AI_FILE_SORTER_ENABLE_EMBEDDED_AI=1)
+    else()
+        target_compile_definitions(ai_file_sorter_tests PRIVATE AI_FILE_SORTER_ENABLE_EMBEDDED_AI=0)
+    endif()
 
     qt_add_resources(ai_file_sorter_tests "ai_file_sorter_test_app_resources"
         PREFIX "/dev/hfstudio/AIFileSorter"
@@ -1641,7 +1698,9 @@ if(AI_FILE_SORTER_BUILD_TESTS)
     aifs_set_windows_test_runtime_output(ai_file_sorter_tests)
 
     if(WIN32)
-        target_link_libraries(ai_file_sorter_tests PRIVATE ggml ggml_base ggml_cpu)
+        if(AI_FILE_SORTER_ENABLE_EMBEDDED_AI)
+            target_link_libraries(ai_file_sorter_tests PRIVATE ggml ggml_base ggml_cpu)
+        endif()
         foreach(libName IN LISTS WIN_SYSTEM_LIBS)
             string(TOUPPER "${libName}" upperLib)
             set(varName "${upperLib}_LIBRARY")
@@ -1652,6 +1711,7 @@ if(AI_FILE_SORTER_BUILD_TESTS)
             endif()
         endforeach()
     endif()
+
 
     aifs_stage_test_runtime(ai_file_sorter_tests)
     if(WIN32)
@@ -1756,11 +1816,12 @@ if(AI_FILE_SORTER_BUILD_TESTS)
     if(NOT WIN32)
         add_test(
             NAME integration_run_all
-            COMMAND ${CMAKE_COMMAND} -E env bash ${CMAKE_SOURCE_DIR}/../tests/run_all_tests.sh
-            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/..
+            COMMAND bash "${CMAKE_SOURCE_DIR}/../tests/run_all_tests.sh"
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/.."
         )
         set_tests_properties(integration_run_all PROPERTIES
             PASS_REGULAR_EXPRESSION "All tests completed successfully."
         )
     endif()
+
 endif()

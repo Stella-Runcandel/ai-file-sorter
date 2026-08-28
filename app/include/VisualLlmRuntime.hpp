@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+#if AI_FILE_SORTER_ENABLE_EMBEDDED_AI
+
 /**
  * @brief Resolves local visual/text LLM runtime files and fallback heuristics.
  */
@@ -77,3 +79,34 @@ public:
     static bool should_use_gpu();
     static bool should_offer_cpu_fallback(const std::string& reason);
 };
+
+#else
+
+class VisualLlmRuntime {
+public:
+    struct ResolvedArtifact {
+        const VisualModelArtifactDescriptor* descriptor{nullptr};
+        std::filesystem::path path;
+    };
+
+    struct Backend {
+        const VisualModelDescriptor* descriptor{nullptr};
+        std::vector<ResolvedArtifact> artifacts;
+        std::optional<std::filesystem::path> path_for(VisualModelArtifactKind) const { return std::nullopt; }
+    };
+
+    struct Paths {
+        std::filesystem::path model_path;
+        std::filesystem::path mmproj_path;
+    };
+
+    static bool default_text_llm_files_available() { return false; }
+    static std::optional<Backend> resolve_active_backend(std::string_view = {}, std::string* = nullptr) { return std::nullopt; }
+    static std::optional<Backend> resolve_active_backend(std::string_view, const std::vector<CustomLLM>&, std::string* = nullptr) { return std::nullopt; }
+    static std::optional<Paths> resolve_paths(std::string_view = {}, std::string* = nullptr) { return std::nullopt; }
+    static std::optional<Paths> resolve_paths(std::string_view, const std::vector<CustomLLM>&, std::string* = nullptr) { return std::nullopt; }
+    static bool should_use_gpu() { return false; }
+    static bool should_offer_cpu_fallback(const std::string&) { return false; }
+};
+
+#endif

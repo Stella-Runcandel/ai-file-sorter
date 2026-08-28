@@ -2,17 +2,22 @@
 
 #ifdef AI_FILE_SORTER_TEST_BUILD
 
+#if AI_FILE_SORTER_ENABLE_EMBEDDED_AI
 #include "LocalLLMClient.hpp"
+#include "llama.h"
+#endif
+
 #include "Types.hpp"
+#include "LocalLLMResponseSanitizer.hpp"
 
 #include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
-#include "llama.h"
 
 namespace LocalLLMTestAccess {
 
+#if AI_FILE_SORTER_ENABLE_EMBEDDED_AI
 enum class BackendPreference {
     Auto,
     Cpu,
@@ -58,7 +63,11 @@ std::string categorization_user_prompt_for_testing(const std::string& file_name,
                                                    const std::string& file_path,
                                                    FileType file_type,
                                                    const std::string& consistency_context);
-std::string sanitize_output_for_testing(const std::string& output);
+#endif
+
+inline std::string sanitize_output_for_testing(const std::string& output) {
+    return LocalLLMResponseSanitizer::sanitize_categorization_output(output);
+}
 
 } // namespace LocalLLMTestAccess
 

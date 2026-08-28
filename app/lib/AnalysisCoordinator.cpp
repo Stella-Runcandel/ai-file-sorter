@@ -952,6 +952,7 @@ AnalysisRunResult AnalysisCoordinator::execute()
                 return VisualLlmRuntime::should_offer_cpu_fallback(ex.what());
             };
 
+#if AI_FILE_SORTER_ENABLE_EMBEDDED_AI
             if (!is_remote) {
                 std::string error;
                 visual_backend =
@@ -984,6 +985,11 @@ AnalysisRunResult AnalysisCoordinator::execute()
                 };
                 vision_settings.log_visual_output = app_.should_log_prompts();
             }
+#else
+            if (!is_remote) {
+                throw std::runtime_error("Local embedded visual models are not available in this endpoint-only build. Please configure an external AI endpoint with vision support in settings.");
+            }
+#endif
 
             auto update_cached_image_suggestion = [&](const FileEntry& entry,
                                                       const std::string& suggested_name) {
@@ -1136,6 +1142,7 @@ AnalysisRunResult AnalysisCoordinator::execute()
                         app_.core_logger->error("Endpoint image analyzer initialization failed: {}", ex.what());
                     }
                 }
+#if AI_FILE_SORTER_ENABLE_EMBEDDED_AI
             } else {
                 auto create_analyzer = [&]() -> std::unique_ptr<ImageAnalyzer> {
                     return ImageAnalyzerFactory::create(*visual_backend, vision_settings);
@@ -1193,6 +1200,16 @@ AnalysisRunResult AnalysisCoordinator::execute()
                     }
                 }
             }
+#else
+            } else {
+                skip_visual_analysis = true;
+                skip_visual_reason = "Local embedded visual models are not available in this endpoint-only build. Please configure an external AI endpoint with vision support in settings.";
+                if (app_.core_logger) {
+                    app_.core_logger->warn("{}", skip_visual_reason);
+                }
+            }
+#endif
+
 
             if (skip_visual_analysis) {
                 confirm_visual_filename_fallback(skip_visual_reason);
@@ -1310,6 +1327,7 @@ AnalysisRunResult AnalysisCoordinator::execute()
                             app_.mark_progress_stage_item_completed(ProgressStageId::ImageAnalysis, entry);
                             break;
                         } catch (const std::exception& ex) {
+#if AI_FILE_SORTER_ENABLE_EMBEDDED_AI
                             const bool retry_on_cpu = should_retry_on_cpu(ex);
                             if (!visual_cpu_fallback_active &&
                                 allow_visual_cpu_fallback &&
@@ -1374,9 +1392,18 @@ AnalysisRunResult AnalysisCoordinator::execute()
                                 }
                                 handle_visual_failure(entry, ex.what(), already_renamed, true, visual_only);
                             }
+#else
+                            if (app_.core_logger) {
+                                app_.core_logger->warn("Visual analysis failed for '{}': {}",
+                                                       entry.file_name,
+                                                       ex.what());
+                            }
+                            handle_visual_failure(entry, ex.what(), already_renamed, true, visual_only);
+#endif
                             app_.mark_progress_stage_item_skipped(ProgressStageId::ImageAnalysis, entry);
                             break;
                         }
+
                     }
 
                     if (stop_visual_analysis) {

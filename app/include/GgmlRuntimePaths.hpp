@@ -11,6 +11,8 @@ namespace spdlog { class logger; }
 
 namespace GgmlRuntimePaths {
 
+#if AI_FILE_SORTER_ENABLE_EMBEDDED_AI
+
 bool has_payload(const std::filesystem::path& dir);
 
 /**
@@ -117,5 +119,25 @@ std::optional<std::string> sanitize_linux_backend_environment();
  * Linux accelerator payload sanitization decisions.
  */
 void ensure_ggml_backends_loaded(const std::shared_ptr<spdlog::logger>& logger = {});
+
+#else
+
+struct LinuxAcceleratorPayloadCheck {
+    bool valid{false};
+    std::string reason;
+};
+
+inline bool has_payload(const std::filesystem::path&) { return false; }
+inline std::vector<std::filesystem::path> windows_cpu_runtime_candidate_dirs(const std::filesystem::path&) { return {}; }
+inline std::optional<std::filesystem::path> resolve_windows_cpu_runtime_dir(const std::filesystem::path&) { return std::nullopt; }
+inline std::vector<std::filesystem::path> windows_vulkan_payload_candidate_dirs(const std::filesystem::path&) { return {}; }
+inline std::optional<std::filesystem::path> resolve_windows_vulkan_payload_dir(const std::filesystem::path&) { return std::nullopt; }
+inline std::vector<std::filesystem::path> macos_candidate_dirs(const std::filesystem::path&, std::string_view) { return {}; }
+inline std::optional<std::filesystem::path> resolve_macos_backend_dir(const std::optional<std::filesystem::path>& current_dir, const std::filesystem::path&, std::string_view) { return current_dir; }
+inline LinuxAcceleratorPayloadCheck validate_linux_accelerator_payload(const std::filesystem::path&, std::string_view) { return {false, "Embedded AI is disabled in this build."}; }
+inline std::optional<std::string> sanitize_linux_backend_environment() { return std::nullopt; }
+inline void ensure_ggml_backends_loaded(const std::shared_ptr<spdlog::logger>& = {}) {}
+
+#endif
 
 } // namespace GgmlRuntimePaths

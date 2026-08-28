@@ -21,7 +21,10 @@ public:
      * @brief Create an OpenAI-compatible client adapter, optionally targeting a custom base URL.
      */
     LLMClient(std::string api_key, std::string model, std::string base_url = std::string());
+    LLMClient(LLMClient&&) noexcept = default;
+    LLMClient& operator=(LLMClient&&) noexcept = default;
     ~LLMClient() override;
+
 
     std::string categorize_file(const std::string& file_name,
                                 const std::string& file_path,
