@@ -18,7 +18,6 @@ $ErrorActionPreference = "Stop"
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $appDir = $scriptDir
-$llamaDir = Join-Path $appDir "include/external/llama.cpp"
 $legacySharedVcpkgInstalledDir = Join-Path $appDir "build-windows\\vcpkg_installed"
 $dedicatedSharedVcpkgInstalledDir = Join-Path $appDir "build-windows-vcpkg_installed"
 $sharedVcpkgInstalledDir = if (Test-Path $legacySharedVcpkgInstalledDir) {
@@ -87,6 +86,10 @@ function Resolve-VcpkgRootFromPath {
 function Get-DefaultVcpkgRootCandidates {
     $candidates = New-Object System.Collections.Generic.List[string]
 
+    $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $appDir ".."))
+    $candidates.Add((Join-Path $repoRoot ".tools\vcpkg"))
+    $candidates.Add((Join-Path $repoRoot ".tools/vcpkg"))
+
     $repoDrive = [System.IO.Path]::GetPathRoot([System.IO.Path]::GetFullPath($appDir)).TrimEnd('\')
     $systemDrive = if ($env:SystemDrive) { $env:SystemDrive.TrimEnd('\') } else { $null }
 
@@ -106,7 +109,6 @@ function Get-DefaultVcpkgRootCandidates {
         $candidates.Add((Join-Path $root "vcpkg"))
     }
 
-    $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $appDir ".."))
     $repoParent = Split-Path -Parent $repoRoot
     if ($repoParent) {
         $candidates.Add((Join-Path $repoParent "vcpkg"))
@@ -617,23 +619,6 @@ function Stage-BuildOutput {
         Write-Warning "PDFium DLL not found under external/pdfium/windows-x64/bin. Run app\\scripts\\vendor_doc_deps.ps1 (or app/scripts/vendor_doc_deps.sh) to populate it."
     }
 
-    function Resolve-PrecompiledVulkanBinDirectory {
-        param([string]$ApplicationDir)
-
-        $candidates = @(
-            (Join-Path $ApplicationDir "lib/precompiled/vulkan-blas/bin"),
-            (Join-Path $ApplicationDir "lib/precompiled/vulkan/bin")
-        )
-
-        foreach ($candidate in $candidates) {
-            if (Test-Path $candidate) {
-                return $candidate
-            }
-        }
-
-        return $candidates[0]
-    }
-
     function Ensure-ZlibCompatibilityAlias {
         param([string]$Directory)
 
@@ -642,138 +627,6 @@ function Stage-BuildOutput {
         if ((Test-Path $zlibRuntime) -and -not (Test-Path $zCompatRuntime)) {
             Copy-Item $zlibRuntime -Destination $zCompatRuntime -Force
             Write-Output "Created z.dll compatibility alias from zlib1.dll in $Directory"
-        }
-    }
-
-    function Get-MingwRuntimeSearchPaths {
-        param([string]$PrecompiledCpuRuntimeDir)
-
-        $paths = New-Object System.Collections.Generic.List[string]
-        if ($PrecompiledCpuRuntimeDir) {
-            $paths.Add($PrecompiledCpuRuntimeDir) | Out-Null
-        }
-        if ($env:OPENBLAS_ROOT) {
-            $paths.Add((Join-Path $env:OPENBLAS_ROOT "bin")) | Out-Null
-        }
-        $paths.Add("C:\msys64\ucrt64\bin") | Out-Null
-        $paths.Add("C:\msys64\mingw64\bin") | Out-Null
-
-        return @(
-            $paths |
-                Where-Object { $_ -and (Test-Path $_) } |
-                Select-Object -Unique
-        )
-    }
-
-    $precompiledCpuBin = Join-Path $appDir "lib/precompiled/cpu/bin"
-    $precompiledCudaBin = Join-Path $appDir "lib/precompiled/cuda/bin"
-    $precompiledVulkanBin = Resolve-PrecompiledVulkanBinDirectory -ApplicationDir $appDir
-
-    $destWocuda = Join-Path $outputDir "lib/ggml/wocuda"
-    $destWcuda = Join-Path $outputDir "lib/ggml/wcuda"
-    $destWvulkan = Join-Path $outputDir "lib/ggml/wvulkan"
-
-    function Remove-RootGgmlRuntimeDlls {
-        param([string]$Directory)
-
-        $rootRuntimeDlls = @(
-            "llama.dll",
-            "mtmd.dll",
-            "ggml.dll",
-            "ggml-base.dll",
-            "ggml-cpu.dll",
-            "ggml-blas.dll",
-            "ggml-cuda.dll",
-            "ggml-vulkan.dll",
-            "vulkan-1.dll"
-        )
-
-        foreach ($dllName in $rootRuntimeDlls) {
-            $rootCopy = Join-Path $Directory $dllName
-            if (Test-Path $rootCopy) {
-                Remove-Item -LiteralPath $rootCopy -Force
-            }
-        }
-    }
-
-    function Copy-RootVulkanRuntimeDlls {
-        param(
-            [string]$SourceDirectory,
-            [string]$Destination
-        )
-
-        if (-not (Test-Path $SourceDirectory)) {
-            Write-Warning "Vulkan runtime DLL directory not found: $SourceDirectory"
-            return
-        }
-
-        Get-ChildItem -Path $SourceDirectory -Filter "*.dll" -File -ErrorAction SilentlyContinue |
-            ForEach-Object {
-                Copy-Item $_.FullName -Destination $Destination -Force
-            }
-    }
-
-    foreach ($destDir in @($destWocuda, $destWcuda, $destWvulkan)) {
-        if (-not (Test-Path $destDir)) {
-            New-Item -ItemType Directory -Path $destDir -Force | Out-Null
-        }
-    }
-
-    if (Test-Path $precompiledCpuBin) {
-        Get-ChildItem -Path $precompiledCpuBin -Filter "*.dll" -File -ErrorAction SilentlyContinue |
-            ForEach-Object {
-                if ($_.Name -ieq "libcurl.dll") { return }
-                Copy-Item $_.FullName -Destination $destWocuda -Force
-            }
-    }
-
-    $mingwRuntimeNames = @("libgomp-1.dll", "libgcc_s_seh-1.dll", "libgfortran-5.dll", "libwinpthread-1.dll", "libquadmath-0.dll")
-    $runtimeSearchPaths = Get-MingwRuntimeSearchPaths -PrecompiledCpuRuntimeDir $precompiledCpuBin
-    $runtimePathDescription = if ($runtimeSearchPaths.Count -gt 0) {
-        $runtimeSearchPaths -join ", "
-    } else {
-        "no known runtime paths"
-    }
-
-    foreach ($dllName in $mingwRuntimeNames) {
-        $found = $false
-        foreach ($path in $runtimeSearchPaths) {
-            $candidate = Join-Path $path $dllName
-            if (Test-Path $candidate) {
-                Copy-Item $candidate -Destination $destWocuda -Force
-                Copy-Item $candidate -Destination $outputDir -Force
-                $found = $true
-                break
-            }
-        }
-        if (-not $found) {
-            Write-Warning "Could not locate $dllName in any OpenBLAS runtime path ($runtimePathDescription). Rebuild app/lib/precompiled/cpu with app/scripts/build_llama_windows.ps1 or copy the OpenBLAS companion DLLs beside libopenblas.dll if this runtime is required."
-        }
-    }
-
-    if (Test-Path $precompiledCudaBin) {
-        Get-ChildItem -Path $precompiledCudaBin -Filter "*.dll" -File -ErrorAction SilentlyContinue |
-            ForEach-Object {
-                if ($_.Name -ieq "libcurl.dll") { return }
-                Copy-Item $_.FullName -Destination $destWcuda -Force
-            }
-    }
-
-    if (Test-Path $precompiledVulkanBin) {
-        Get-ChildItem -Path $precompiledVulkanBin -Filter "*.dll" -File -ErrorAction SilentlyContinue |
-            ForEach-Object {
-                if ($_.Name -ieq "libcurl.dll") { return }
-                Copy-Item $_.FullName -Destination $destWvulkan -Force
-            }
-    }
-
-    foreach ($destDir in @($destWocuda, $destWcuda, $destWvulkan)) {
-        if (Test-Path $destDir) {
-            Get-ChildItem -Path $destDir -Filter "*.lib" -File -Recurse -ErrorAction SilentlyContinue |
-                Remove-Item -Force
-            Get-ChildItem -Path $destDir -Directory -Recurse -ErrorAction SilentlyContinue |
-                Where-Object { $_.Name -in @("bin", "lib") } |
-                ForEach-Object { Remove-Item $_.FullName -Recurse -Force }
         }
     }
 
@@ -822,18 +675,7 @@ function Stage-BuildOutput {
         Write-Warning "No vcpkg runtime DLLs were copied; ensure curl/openssl/sqlite runtimes are present beside the executable before distributing."
     }
 
-    if ($PackageKind -eq "MSIX") {
-        Remove-RootGgmlRuntimeDlls -Directory $outputDir
-        Copy-RootVulkanRuntimeDlls -SourceDirectory $precompiledVulkanBin -Destination $outputDir
-    } else {
-        Remove-RootGgmlRuntimeDlls -Directory $outputDir
-    }
-
     Ensure-ZlibCompatibilityAlias -Directory $outputDir
-}
-
-if (-not (Test-Path (Join-Path $llamaDir "CMakeLists.txt"))) {
-    throw "llama.cpp submodule not found. Run 'git submodule update --init --recursive' before building."
 }
 
 if ($RunTests) {

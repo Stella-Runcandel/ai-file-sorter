@@ -23,7 +23,6 @@ TS_FILES=(
 )
 
 LUPDATE_SOURCES=(
-    "$ROOT_DIR/app/startapp_windows.cpp"
     "$ROOT_DIR"/app/lib/*.cpp
     "$ROOT_DIR"/app/include/*.hpp
 )

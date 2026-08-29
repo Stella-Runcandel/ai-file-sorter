@@ -141,6 +141,7 @@ app/include/llama/*.h
 /scripts/
 !app/scripts/
 /tools/
+/.tools/
 /reports/
 /logo-workdir-temp/
 /tmp/

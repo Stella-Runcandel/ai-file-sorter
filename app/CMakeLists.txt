@@ -8,8 +8,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(AI_FILE_SORTER_BUILD_TESTS "Build unit tests (requires Catch2 submodule)" OFF)
-option(AI_FILE_SORTER_ENABLE_EMBEDDED_AI
-    "Build legacy embedded llama.cpp local AI runtime" OFF)
 option(AI_FILE_SORTER_ENABLE_LIVE_LLM_TESTS
     "Register opt-in headless tests that run real local LLM models against real files." OFF)
 option(AI_FILE_SORTER_REQUIRE_EMBEDDED_PDF_BACKEND
@@ -73,11 +71,6 @@ if(WIN32)
         message(FATAL_ERROR
             "Unsupported AI_FILE_SORTER_WINDOWS_PACKAGE_KIND='${AI_FILE_SORTER_WINDOWS_PACKAGE_KIND}'. "
             "Expected STANDARD, MSIX, or STANDALONE.")
-    endif()
-
-    if(NOT _aifs_effective_windows_package_kind STREQUAL "MSIX")
-        set(_aifs_windows_enable_starter TRUE)
-        set(_aifs_windows_main_output_name "aifilesorter-bin")
     endif()
 
     message(STATUS "AI File Sorter Windows package kind: ${_aifs_effective_windows_package_kind}")
@@ -712,20 +705,13 @@ target_include_directories(aifilesorter PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
     ${DOC_DEPS_INCLUDE_DIRS}
 )
-if(AI_FILE_SORTER_ENABLE_EMBEDDED_AI)
-    target_include_directories(aifilesorter PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/include/llama"
-        "${CMAKE_CURRENT_SOURCE_DIR}/include/external/llama.cpp/tools/mtmd"
-    )
-endif()
-
 
 if(_aifs_enable_translation_generation)
     qt_add_lupdate(
         aifilesorter
         NO_GLOBAL_TARGET
         TS_FILES ${AIFS_TRANSLATION_TS_FILES}
-        SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/startapp_windows.cpp" ${APP_HEADER_SOURCES}
+        SOURCES ${APP_HEADER_SOURCES}
         OPTIONS -no-obsolete
     )
 
@@ -883,157 +869,6 @@ qt_add_resources(aifilesorter "app_resources"
     FILES ${APP_RESOURCE_FILES}
 )
 
-if(AI_FILE_SORTER_ENABLE_EMBEDDED_AI)
-    target_compile_definitions(aifilesorter PRIVATE AI_FILE_SORTER_ENABLE_EMBEDDED_AI=1)
-    if(WIN32)
-        if(DEFINED ENV{WindowsSdkDir} AND DEFINED ENV{WindowsSDKLibVersion})
-            set(WIN_SDK_UM_DIR "$ENV{WindowsSdkDir}Lib/$ENV{WindowsSDKLibVersion}/um/x64")
-            set(WIN_SDK_UCRT_DIR "$ENV{WindowsSdkDir}Lib/$ENV{WindowsSDKLibVersion}/ucrt/x64")
-            if(EXISTS "${WIN_SDK_UM_DIR}")
-                link_directories("${WIN_SDK_UM_DIR}")
-            endif()
-            if(EXISTS "${WIN_SDK_UCRT_DIR}")
-                link_directories("${WIN_SDK_UCRT_DIR}")
-            endif()
-        endif()
-
-        set(PRECOMPILED_CPU_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/lib/precompiled/cpu/lib")
-        set(PRECOMPILED_CPU_BIN_DIR "${CMAKE_CURRENT_SOURCE_DIR}/lib/precompiled/cpu/bin")
-        set(PRECOMPILED_CUDA_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/lib/precompiled/cuda/lib")
-        set(PRECOMPILED_CUDA_BIN_DIR "${CMAKE_CURRENT_SOURCE_DIR}/lib/precompiled/cuda/bin")
-        set(PRECOMPILED_VULKAN_ROOT_DIR "")
-        foreach(_aifs_precompiled_vulkan_candidate
-                "${CMAKE_CURRENT_SOURCE_DIR}/lib/precompiled/vulkan-blas"
-                "${CMAKE_CURRENT_SOURCE_DIR}/lib/precompiled/vulkan")
-            if(EXISTS "${_aifs_precompiled_vulkan_candidate}/bin")
-                set(PRECOMPILED_VULKAN_ROOT_DIR "${_aifs_precompiled_vulkan_candidate}")
-                break()
-            endif()
-        endforeach()
-        if(PRECOMPILED_VULKAN_ROOT_DIR STREQUAL "")
-            set(PRECOMPILED_VULKAN_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/lib/precompiled/vulkan-blas")
-        endif()
-        set(PRECOMPILED_VULKAN_LIB_DIR "${PRECOMPILED_VULKAN_ROOT_DIR}/lib")
-        set(PRECOMPILED_VULKAN_BIN_DIR "${PRECOMPILED_VULKAN_ROOT_DIR}/bin")
-        set(LLAMA_CPU_IMPORT "${PRECOMPILED_CPU_LIB_DIR}/llama.lib")
-        set(LLAMA_CPU_DLL "${PRECOMPILED_CPU_BIN_DIR}/llama.dll")
-        if(NOT EXISTS "${LLAMA_CPU_IMPORT}")
-            message(FATAL_ERROR "Missing ${LLAMA_CPU_IMPORT}. Run app/scripts/build_llama_windows.ps1 cuda=off vcpkgroot=<path> first.")
-        endif()
-        if(NOT EXISTS "${LLAMA_CPU_DLL}")
-            message(FATAL_ERROR "Missing ${LLAMA_CPU_DLL}. Run app/scripts/build_llama_windows.ps1 cuda=off vcpkgroot=<path> to stage runtime DLLs.")
-        endif()
-        add_library(llama SHARED IMPORTED)
-        set_target_properties(llama PROPERTIES
-            IMPORTED_IMPLIB "${LLAMA_CPU_IMPORT}"
-            IMPORTED_LOCATION "${LLAMA_CPU_DLL}"
-        )
-
-        foreach(libName IN ITEMS ggml ggml-base ggml-cpu)
-            set(import_path "${PRECOMPILED_CPU_LIB_DIR}/${libName}.lib")
-            set(dll_path "${PRECOMPILED_CPU_BIN_DIR}/${libName}.dll")
-            if(NOT EXISTS "${import_path}")
-                message(FATAL_ERROR "Missing ${import_path}. Run app/scripts/build_llama_windows.ps1 cuda=off vcpkgroot=<path> first.")
-            endif()
-            if(NOT EXISTS "${dll_path}")
-                message(FATAL_ERROR "Missing ${dll_path}. Run app/scripts/build_llama_windows.ps1 cuda=off vcpkgroot=<path> to stage runtime DLLs.")
-            endif()
-            string(REPLACE "-" "_" imported_target "${libName}")
-            add_library(${imported_target} SHARED IMPORTED)
-            set_target_properties(${imported_target} PROPERTIES
-                IMPORTED_IMPLIB "${import_path}"
-                IMPORTED_LOCATION "${dll_path}"
-            )
-        endforeach()
-
-        set(MTMD_IMPORT "${PRECOMPILED_CPU_LIB_DIR}/mtmd.lib")
-        set(MTMD_DLL "${PRECOMPILED_CPU_BIN_DIR}/mtmd.dll")
-        if(EXISTS "${MTMD_IMPORT}" AND EXISTS "${MTMD_DLL}")
-            add_library(mtmd SHARED IMPORTED)
-            set_target_properties(mtmd PROPERTIES
-                IMPORTED_IMPLIB "${MTMD_IMPORT}"
-                IMPORTED_LOCATION "${MTMD_DLL}"
-            )
-            target_compile_definitions(aifilesorter PRIVATE AI_FILE_SORTER_HAS_MTMD)
-            set(_aifs_saved_required_libs "${CMAKE_REQUIRED_LIBRARIES}")
-            set(CMAKE_REQUIRED_LIBRARIES "${MTMD_IMPORT}")
-            check_cxx_source_compiles([[
-                extern "C" void mtmd_helper_set_progress_callback(void*, void*);
-                int main() {
-                    mtmd_helper_set_progress_callback(0, 0);
-                    return 0;
-                }
-            ]] HAVE_MTMD_HELPER_SET_PROGRESS_CALLBACK)
-            check_cxx_source_compiles([[
-                extern "C" void mtmd_helper_log_set(void*, void*);
-                int main() {
-                    mtmd_helper_log_set(0, 0);
-                    return 0;
-                }
-            ]] HAVE_MTMD_HELPER_LOG_SET)
-            set(CMAKE_REQUIRED_LIBRARIES "${_aifs_saved_required_libs}")
-            unset(_aifs_saved_required_libs)
-            if(HAVE_MTMD_HELPER_SET_PROGRESS_CALLBACK)
-                target_compile_definitions(aifilesorter PRIVATE AI_FILE_SORTER_MTMD_PROGRESS_CALLBACK)
-            endif()
-            if(HAVE_MTMD_HELPER_LOG_SET)
-                target_compile_definitions(aifilesorter PRIVATE AI_FILE_SORTER_MTMD_LOG_CALLBACK)
-            endif()
-        else()
-            message(WARNING "Visual LLM support disabled: missing mtmd.lib/mtmd.dll under app/lib/precompiled/cpu. Run app/scripts/build_llama_windows.ps1 to stage mtmd.")
-        endif()
-    else()
-        # Build llama.cpp from the included submodule for non-Windows platforms
-        set(LLAMA_BUILD_COMMON ON CACHE BOOL "llama: build common utils library" FORCE)
-        set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared libs" FORCE)
-        if(UNIX AND NOT APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|X86_64|amd64|AMD64)$")
-            # Keep x64 Linux builds compatible with older SSE4.2-capable CPUs instead of
-            # auto-targeting AVX/F16C/FMA/AVX2/BMI2 based on the build host.
-            set(GGML_NATIVE OFF CACHE BOOL "ggml: optimize the build for the current system" FORCE)
-            set(GGML_SSE42 ON CACHE BOOL "ggml: enable SSE 4.2" FORCE)
-            set(GGML_F16C OFF CACHE BOOL "ggml: enable F16C" FORCE)
-            set(GGML_FMA OFF CACHE BOOL "ggml: enable FMA" FORCE)
-            set(GGML_AVX OFF CACHE BOOL "ggml: enable AVX" FORCE)
-            set(GGML_AVX_VNNI OFF CACHE BOOL "ggml: enable AVX-VNNI" FORCE)
-            set(GGML_AVX2 OFF CACHE BOOL "ggml: enable AVX2" FORCE)
-            set(GGML_BMI2 OFF CACHE BOOL "ggml: enable BMI2" FORCE)
-            set(GGML_AVX512 OFF CACHE BOOL "ggml: enable AVX512F" FORCE)
-            set(GGML_AVX512_VBMI OFF CACHE BOOL "ggml: enable AVX512-VBMI" FORCE)
-            set(GGML_AVX512_VNNI OFF CACHE BOOL "ggml: enable AVX512-VNNI" FORCE)
-            set(GGML_AVX512_BF16 OFF CACHE BOOL "ggml: enable AVX512-BF16" FORCE)
-        endif()
-        add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/include/external/llama.cpp" "${CMAKE_CURRENT_BINARY_DIR}/llama-build")
-        get_directory_property(_llama_install_version DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/llama-build" DEFINITION LLAMA_INSTALL_VERSION)
-        if (NOT _llama_install_version OR _llama_install_version STREQUAL "LLAMA_INSTALL_VERSION-NOTFOUND")
-            set(_llama_install_version "0.0.0")
-        endif()
-        set(LLAMA_INSTALL_VERSION "${_llama_install_version}")
-        add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/include/external/llama.cpp/tools/mtmd" "${CMAKE_CURRENT_BINARY_DIR}/mtmd-build")
-        target_link_libraries(aifilesorter PRIVATE llama)
-        target_link_libraries(aifilesorter PRIVATE mtmd)
-        target_compile_definitions(aifilesorter PRIVATE AI_FILE_SORTER_HAS_MTMD)
-        set(CMAKE_REQUIRED_INCLUDES
-            "${CMAKE_CURRENT_SOURCE_DIR}/include/external/llama.cpp/tools/mtmd"
-            "${CMAKE_CURRENT_SOURCE_DIR}/include/external/llama.cpp/include"
-            "${CMAKE_CURRENT_SOURCE_DIR}/include/external/llama.cpp/ggml/include"
-        )
-        check_symbol_exists(mtmd_helper_set_progress_callback "mtmd-helper.h" HAVE_MTMD_HELPER_SET_PROGRESS_CALLBACK)
-        check_symbol_exists(mtmd_helper_log_set "mtmd-helper.h" HAVE_MTMD_HELPER_LOG_SET)
-        set(CMAKE_REQUIRED_INCLUDES)
-        if(HAVE_MTMD_HELPER_SET_PROGRESS_CALLBACK)
-            target_compile_definitions(aifilesorter PRIVATE AI_FILE_SORTER_MTMD_PROGRESS_CALLBACK)
-        endif()
-        if(HAVE_MTMD_HELPER_LOG_SET)
-            target_compile_definitions(aifilesorter PRIVATE AI_FILE_SORTER_MTMD_LOG_CALLBACK)
-        endif()
-        if(MSVC)
-            target_compile_options(llama PRIVATE /Zc:char8_t-)
-        endif()
-    endif()
-else()
-    target_compile_definitions(aifilesorter PRIVATE AI_FILE_SORTER_ENABLE_EMBEDDED_AI=0)
-endif()
-
 # Link libraries
 target_link_libraries(aifilesorter PRIVATE
     Qt6::Widgets Qt6::Gui Qt6::Core Qt6::Network
@@ -1047,15 +882,6 @@ target_link_libraries(aifilesorter PRIVATE
     ${MEDIAINFO_DEPS_LIBS}
     ${DOC_DEPS_LIBS}
 )
-if(AI_FILE_SORTER_ENABLE_EMBEDDED_AI)
-    target_link_libraries(aifilesorter PRIVATE llama)
-    if(WIN32)
-        target_link_libraries(aifilesorter PRIVATE ggml ggml_base ggml_cpu)
-        if(TARGET mtmd)
-            target_link_libraries(aifilesorter PRIVATE mtmd)
-        endif()
-    endif()
-endif()
 
 target_compile_definitions(aifilesorter PRIVATE
     AIFS_STORAGE_PLUGIN_CATALOG_URL="${AI_FILE_SORTER_STORAGE_PLUGIN_CATALOG_URL}"
@@ -1086,34 +912,6 @@ endif()
 
 aifs_stage_windows_qt_plugins(aifilesorter)
 aifs_stage_windows_webp_runtime(aifilesorter)
-
-set(STARTER_TARGET "")
-if(WIN32 AND _aifs_windows_enable_starter)
-    set(STARTER_TARGET StartAiFileSorter)
-    add_executable(${STARTER_TARGET} WIN32
-        "${CMAKE_CURRENT_SOURCE_DIR}/startapp_windows.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/lib/WindowsCudaProbe.cpp"
-    )
-    set_target_properties(${STARTER_TARGET} PROPERTIES
-        OUTPUT_NAME "aifilesorter"
-    )
-    aifs_apply_update_mode(${STARTER_TARGET})
-    target_include_directories(${STARTER_TARGET} PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    )
-    target_link_libraries(${STARTER_TARGET} PRIVATE
-        Qt6::Widgets Qt6::Gui Qt6::Core
-    )
-    target_compile_definitions(${STARTER_TARGET} PRIVATE
-        AIFS_MAIN_EXECUTABLE_NAME="${_aifs_windows_main_output_name}.exe"
-    )
-    target_compile_definitions(${STARTER_TARGET} PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
-    target_compile_definitions(${STARTER_TARGET} PRIVATE AI_FILE_SORTER_GGML_RUNTIME_PATHS_NO_BACKEND_LOADING)
-    add_custom_command(TARGET ${STARTER_TARGET} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E rm -f "$<TARGET_FILE_DIR:${STARTER_TARGET}>/StartAiFileSorter.exe"
-    )
-    aifs_stage_windows_qt_plugins(${STARTER_TARGET})
-endif()
 
 # On Windows, ensure Unicode and lean Windows headers in deps that need it
 if(WIN32)
@@ -1289,88 +1087,6 @@ if(WIN32)
         @ONLY
     )
     target_sources(aifilesorter PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated/version.rc")
-    if(STARTER_TARGET)
-        target_sources(${STARTER_TARGET} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated/version.rc")
-    endif()
-
-    file(GLOB _aifs_precompiled_cpu_payload LIST_DIRECTORIES false
-        "${PRECOMPILED_CPU_BIN_DIR}/*")
-    file(GLOB _aifs_precompiled_cuda_payload LIST_DIRECTORIES false
-        "${PRECOMPILED_CUDA_BIN_DIR}/*")
-    file(GLOB _aifs_precompiled_vulkan_payload LIST_DIRECTORIES false
-        "${PRECOMPILED_VULKAN_BIN_DIR}/*")
-
-    if(_aifs_precompiled_cpu_payload)
-        add_custom_command(TARGET aifilesorter POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:aifilesorter>/lib/ggml/wocuda"
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                ${_aifs_precompiled_cpu_payload}
-                "$<TARGET_FILE_DIR:aifilesorter>/lib/ggml/wocuda"
-        )
-    else()
-        add_custom_command(TARGET aifilesorter POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E remove_directory "$<TARGET_FILE_DIR:aifilesorter>/lib/ggml/wocuda"
-        )
-    endif()
-
-    if(_aifs_precompiled_cuda_payload)
-        add_custom_command(TARGET aifilesorter POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:aifilesorter>/lib/ggml/wcuda"
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                ${_aifs_precompiled_cuda_payload}
-                "$<TARGET_FILE_DIR:aifilesorter>/lib/ggml/wcuda"
-        )
-    else()
-        add_custom_command(TARGET aifilesorter POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E remove_directory "$<TARGET_FILE_DIR:aifilesorter>/lib/ggml/wcuda"
-        )
-    endif()
-
-    if(_aifs_precompiled_vulkan_payload)
-        add_custom_command(TARGET aifilesorter POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:aifilesorter>/lib/ggml/wvulkan"
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                ${_aifs_precompiled_vulkan_payload}
-                "$<TARGET_FILE_DIR:aifilesorter>/lib/ggml/wvulkan"
-        )
-    else()
-        add_custom_command(TARGET aifilesorter POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E remove_directory "$<TARGET_FILE_DIR:aifilesorter>/lib/ggml/wvulkan"
-        )
-    endif()
-
-    set(_aifs_root_ggml_runtime_dlls
-        llama.dll
-        mtmd.dll
-        ggml.dll
-        ggml-base.dll
-        ggml-cpu.dll
-        ggml-blas.dll
-        ggml-cuda.dll
-        ggml-vulkan.dll
-        vulkan-1.dll)
-
-    if(_aifs_effective_windows_package_kind STREQUAL "MSIX")
-        foreach(_aifs_root_ggml_dll IN LISTS _aifs_root_ggml_runtime_dlls)
-            add_custom_command(TARGET aifilesorter POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E rm -f "$<TARGET_FILE_DIR:aifilesorter>/${_aifs_root_ggml_dll}"
-            )
-        endforeach()
-        if(_aifs_precompiled_vulkan_payload)
-            add_custom_command(TARGET aifilesorter POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    ${_aifs_precompiled_vulkan_payload}
-                    "$<TARGET_FILE_DIR:aifilesorter>"
-                COMMAND_EXPAND_LISTS
-            )
-        endif()
-    else()
-        foreach(_aifs_root_ggml_dll IN LISTS _aifs_root_ggml_runtime_dlls)
-            add_custom_command(TARGET aifilesorter POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E rm -f "$<TARGET_FILE_DIR:aifilesorter>/${_aifs_root_ggml_dll}"
-            )
-        endforeach()
-    endif()
 endif()
 
 if(AI_FILE_SORTER_BUILD_TESTS)
@@ -1391,69 +1107,12 @@ if(AI_FILE_SORTER_BUILD_TESTS)
 
     function(aifs_stage_test_runtime target_name)
         if(WIN32)
-            set(_aifs_test_runtime_dlls "")
             add_custom_command(TARGET ${target_name} POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different
                     $<TARGET_RUNTIME_DLLS:${target_name}>
                     $<TARGET_FILE_DIR:${target_name}>
                 COMMAND_EXPAND_LISTS
             )
-
-            if(EXISTS "${PRECOMPILED_CPU_BIN_DIR}")
-                foreach(_aifs_precompiled_runtime_name IN ITEMS
-                    llama.dll
-                    llama-common.dll
-                    mtmd.dll
-                    ggml.dll
-                    ggml-base.dll
-                    ggml-cpu.dll
-                    ggml-blas.dll
-                    libopenblas.dll
-                    libgomp-1.dll
-                    libgcc_s_seh-1.dll
-                    libgfortran-5.dll
-                    libwinpthread-1.dll
-                    libquadmath-0.dll)
-                    set(_aifs_precompiled_runtime_path
-                        "${PRECOMPILED_CPU_BIN_DIR}/${_aifs_precompiled_runtime_name}")
-                    if(EXISTS "${_aifs_precompiled_runtime_path}")
-                        list(APPEND _aifs_test_runtime_dlls
-                            "${_aifs_precompiled_runtime_path}")
-                    endif()
-                endforeach()
-            endif()
-
-            set(_aifs_mingw_runtime_search_paths "")
-            if(DEFINED ENV{OPENBLAS_ROOT} AND NOT "$ENV{OPENBLAS_ROOT}" STREQUAL "")
-                list(APPEND _aifs_mingw_runtime_search_paths "$ENV{OPENBLAS_ROOT}/bin")
-            endif()
-            list(APPEND _aifs_mingw_runtime_search_paths "C:/msys64/ucrt64/bin")
-            list(APPEND _aifs_mingw_runtime_search_paths "C:/msys64/mingw64/bin")
-
-            foreach(_aifs_mingw_runtime_name IN ITEMS
-                libgomp-1.dll
-                libgcc_s_seh-1.dll
-                libgfortran-5.dll
-                libwinpthread-1.dll
-                libquadmath-0.dll)
-                foreach(_aifs_runtime_path IN LISTS _aifs_mingw_runtime_search_paths)
-                    if(EXISTS "${_aifs_runtime_path}/${_aifs_mingw_runtime_name}")
-                        list(APPEND _aifs_test_runtime_dlls
-                            "${_aifs_runtime_path}/${_aifs_mingw_runtime_name}")
-                        break()
-                    endif()
-                endforeach()
-            endforeach()
-
-            list(REMOVE_DUPLICATES _aifs_test_runtime_dlls)
-            if(_aifs_test_runtime_dlls)
-                add_custom_command(TARGET ${target_name} POST_BUILD
-                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                        ${_aifs_test_runtime_dlls}
-                        $<TARGET_FILE_DIR:${target_name}>
-                    COMMAND_EXPAND_LISTS
-                )
-            endif()
 
             if(VCPKG_TARGET_TRIPLET)
                 add_custom_command(TARGET ${target_name} POST_BUILD
@@ -1618,11 +1277,6 @@ if(AI_FILE_SORTER_BUILD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit"
         ${DOC_DEPS_INCLUDE_DIRS}
     )
-    if(AI_FILE_SORTER_ENABLE_EMBEDDED_AI)
-        target_include_directories(ai_file_sorter_tests PRIVATE
-            "${CMAKE_CURRENT_SOURCE_DIR}/include/llama"
-        )
-    endif()
 
     target_link_libraries(ai_file_sorter_tests PRIVATE
         Catch2::Catch2WithMain
@@ -1639,12 +1293,6 @@ if(AI_FILE_SORTER_BUILD_TESTS)
         ${MEDIAINFO_DEPS_LIBS}
         ${DOC_DEPS_LIBS}
     )
-    if(AI_FILE_SORTER_ENABLE_EMBEDDED_AI)
-        target_link_libraries(ai_file_sorter_tests PRIVATE llama)
-        target_compile_definitions(ai_file_sorter_tests PRIVATE AI_FILE_SORTER_ENABLE_EMBEDDED_AI=1)
-    else()
-        target_compile_definitions(ai_file_sorter_tests PRIVATE AI_FILE_SORTER_ENABLE_EMBEDDED_AI=0)
-    endif()
 
     qt_add_resources(ai_file_sorter_tests "ai_file_sorter_test_app_resources"
         PREFIX "/dev/hfstudio/AIFileSorter"
@@ -1667,9 +1315,6 @@ if(AI_FILE_SORTER_BUILD_TESTS)
     aifs_set_windows_test_runtime_output(ai_file_sorter_tests)
 
     if(WIN32)
-        if(AI_FILE_SORTER_ENABLE_EMBEDDED_AI)
-            target_link_libraries(ai_file_sorter_tests PRIVATE ggml ggml_base ggml_cpu)
-        endif()
         foreach(libName IN LISTS WIN_SYSTEM_LIBS)
             string(TOUPPER "${libName}" upperLib)
             set(varName "${upperLib}_LIBRARY")
