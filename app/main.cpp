@@ -2,12 +2,9 @@
 #include "AppTheme.hpp"
 #include "AppTestRunner.hpp"
 #include "EmbeddedEnv.hpp"
-#include "GgmlRuntimePaths.hpp"
 #include "HeadlessAnalysisCommand.hpp"
-#include "ImageAnalyzerFactory.hpp"
 #include "ImageAnalyzer.hpp"
 #include "Logger.hpp"
-#include "LlmCatalog.hpp"
 #include "MainApp.hpp"
 #include "SingleInstanceCoordinator.hpp"
 #include "UpdaterBuildConfig.hpp"
@@ -15,7 +12,6 @@
 #include "UpdaterLiveTestConfig.hpp"
 #include "Utils.hpp"
 #include "LLMSelectionDialog.hpp"
-#include "VisualLlmRuntime.hpp"
 #include <app_version.hpp>
 
 #include <QApplication>
@@ -486,18 +482,7 @@ bool llm_choice_is_ready(const Settings& settings)
             && !endpoint.base_url.empty()
             && !endpoint.model.empty();
     }
-    if (choice == LLMChoice::Custom) {
-        const auto id = settings.get_active_custom_llm_id();
-        if (id.empty()) {
-            return false;
-        }
-        const CustomLLM custom = settings.find_custom_llm(id);
-        return !custom.id.empty()
-            && !custom.path.empty()
-            && file_exists(custom.path);
-    }
-
-    return builtin_llm_artifact_available(choice);
+    return false;
 }
 
 bool ensure_llm_choice(Settings& settings, const std::function<void()>& finish_splash)
@@ -666,39 +651,9 @@ int run_self_test_mode(const ParsedArguments& parsed_args)
 
 int run_visual_gpu_probe_mode(const ParsedArguments& parsed_args)
 {
-#if AI_FILE_SORTER_ENABLE_EMBEDDED_AI
-    int qt_argc = static_cast<int>(parsed_args.qt_args.size()) - 1;
-    char** qt_argv = const_cast<char**>(parsed_args.qt_args.data());
-    QCoreApplication app(qt_argc, qt_argv);
-
-    set_process_env("AI_FILE_SORTER_VISUAL_SKIP_GPU_PREFLIGHT", "1");
-    set_process_env("AI_FILE_SORTER_VISUAL_USE_GPU", "1");
-
-    std::string error;
-    const auto backend = VisualLlmRuntime::resolve_active_backend(
-        parsed_args.visual_gpu_probe_backend.value_or(""),
-        &error);
-    if (!backend) {
-        std::cerr << (error.empty() ? "Visual GPU probe could not resolve a backend." : error)
-                  << "\n";
-        return EXIT_FAILURE;
-    }
-
-    try {
-        ImageAnalyzerSettings analyzer_settings;
-        analyzer_settings.use_gpu = true;
-        auto analyzer = ImageAnalyzerFactory::create(*backend, analyzer_settings);
-        (void)analyzer;
-        return EXIT_SUCCESS;
-    } catch (const std::exception& ex) {
-        std::cerr << ex.what() << "\n";
-        return EXIT_FAILURE;
-    }
-#else
     (void)parsed_args;
     std::cerr << "Visual GPU probe is not available in endpoint-only build.\n";
     return EXIT_FAILURE;
-#endif
 }
 
 

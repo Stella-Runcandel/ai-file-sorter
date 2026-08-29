@@ -8,7 +8,6 @@
 #include "MainApp.hpp"
 #include "SupportCodeManager.hpp"
 #include "Utils.hpp"
-#include "VisualLlmRuntime.hpp"
 
 #include <QLabel>
 #include <QLineEdit>
@@ -210,8 +209,8 @@ bool MainAppTestAccess::should_show_progress_message_in_dialog(const MainApp& ap
     return app.should_show_progress_message_in_dialog(message);
 }
 
-bool MainAppTestAccess::should_offer_visual_cpu_fallback(const std::string& reason) {
-    return VisualLlmRuntime::should_offer_cpu_fallback(reason);
+bool MainAppTestAccess::should_offer_visual_cpu_fallback(const std::string& /*reason*/) {
+    return false;
 }
 
 std::string MainAppTestAccess::resolve_document_prompt_name(const std::string& original_name,

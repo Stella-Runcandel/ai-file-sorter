@@ -2,7 +2,7 @@
 
 #include "AppTheme.hpp"
 #include "DocumentTextAnalyzer.hpp"
-#include "LlavaImageAnalyzer.hpp"
+#include "ImageAnalyzer.hpp"
 #include "Logger.hpp"
 #include "MainApp.hpp"
 #include "Utils.hpp"
@@ -383,7 +383,7 @@ CategorizationProgressDialog::DisplayType CategorizationProgressDialog::classify
         return DisplayType::Directory;
     }
     const auto full_path = Utils::utf8_to_path(entry.full_path);
-    if (LlavaImageAnalyzer::is_supported_image(full_path)) {
+    if (ImageAnalyzer::is_supported_image(full_path)) {
         return DisplayType::Image;
     }
     if (DocumentTextAnalyzer::is_supported_document(full_path)) {

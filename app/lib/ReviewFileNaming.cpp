@@ -1,7 +1,7 @@
 #include "ReviewFileNaming.hpp"
 
 #include "DocumentTextAnalyzer.hpp"
-#include "LlavaImageAnalyzer.hpp"
+#include "ImageAnalyzer.hpp"
 #include "Utils.hpp"
 
 #include <algorithm>
@@ -146,7 +146,7 @@ bool is_supported_image_entry(const std::string& file_path,
         return false;
     }
     const auto full_path = Utils::utf8_to_path(file_path) / Utils::utf8_to_path(file_name);
-    return LlavaImageAnalyzer::is_supported_image(full_path);
+    return ImageAnalyzer::is_supported_image(full_path);
 }
 
 bool is_supported_document_entry(const std::string& file_path,

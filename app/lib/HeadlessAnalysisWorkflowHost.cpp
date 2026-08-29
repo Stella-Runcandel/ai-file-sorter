@@ -6,10 +6,6 @@
 #include "DatabaseManager.hpp"
 #include "GeminiClient.hpp"
 #include "LLMClient.hpp"
-#include "LlmCatalog.hpp"
-#if AI_FILE_SORTER_ENABLE_EMBEDDED_AI
-#include "LocalLLMClient.hpp"
-#endif
 #include "Logger.hpp"
 #include "ResultsCoordinator.hpp"
 #include "UserLearningStore.hpp"

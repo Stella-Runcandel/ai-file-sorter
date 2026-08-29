@@ -12,14 +12,12 @@
 #include "DocumentTextAnalyzer.hpp"
 #include "FilenameLocalizationService.hpp"
 #include "ILLMClient.hpp"
-#include "ImageAnalyzerFactory.hpp"
 #include "ImageRenameMetadataService.hpp"
-#include "LlavaImageAnalyzer.hpp"
+#include "ImageAnalyzer.hpp"
 #include "MediaRenameMetadataService.hpp"
 #include "ResultsCoordinator.hpp"
 #include "Settings.hpp"
 #include "Utils.hpp"
-#include "VisualLlmRuntime.hpp"
 
 #include <QByteArray>
 #include <QObject>
@@ -315,7 +313,7 @@ AnalysisRunResult AnalysisCoordinator::execute()
             }
             const auto full_path = Utils::utf8_to_path(entry.file_path) /
                                    Utils::utf8_to_path(entry.file_name);
-            return LlavaImageAnalyzer::is_supported_image(full_path);
+            return ImageAnalyzer::is_supported_image(full_path);
         };
         auto is_supported_document_entry = [](const CategorizedFile& entry) {
             if (entry.type != FileType::File) {
@@ -637,7 +635,7 @@ AnalysisRunResult AnalysisCoordinator::execute()
                                        }
                                        const auto full_path = Utils::utf8_to_path(entry.file_path) /
                                                               Utils::utf8_to_path(entry.file_name);
-                                       const bool is_image = LlavaImageAnalyzer::is_supported_image(full_path);
+                                       const bool is_image = ImageAnalyzer::is_supported_image(full_path);
                                        const bool is_document = DocumentTextAnalyzer::is_supported_document(full_path);
                                        if (is_image && allow_images) {
                                            return false;
@@ -696,7 +694,7 @@ AnalysisRunResult AnalysisCoordinator::execute()
                                        return true;
                                    }
                                    const auto full_path = Utils::utf8_to_path(entry.full_path);
-                                   const bool is_image = LlavaImageAnalyzer::is_supported_image(full_path);
+                                   const bool is_image = ImageAnalyzer::is_supported_image(full_path);
                                    const bool is_document =
                                        DocumentTextAnalyzer::is_supported_document(full_path);
                                    if (is_image && allow_images) {
@@ -939,58 +937,6 @@ AnalysisRunResult AnalysisCoordinator::execute()
                 }
             };
 
-            const bool is_remote = is_remote_choice(app_.settings.get_llm_choice());
-            std::optional<VisualLlmRuntime::Backend> visual_backend;
-            ImageAnalyzerSettings vision_settings;
-            const auto visual_gpu_override = read_env_bool("AI_FILE_SORTER_VISUAL_USE_GPU");
-            const bool allow_visual_cpu_fallback =
-                !is_remote && vision_settings.use_gpu && !visual_gpu_override.has_value();
-            std::optional<bool> visual_cpu_fallback_choice;
-            bool visual_cpu_fallback_active = false;
-
-            auto should_retry_on_cpu = [](const std::exception& ex) {
-                return VisualLlmRuntime::should_offer_cpu_fallback(ex.what());
-            };
-
-#if AI_FILE_SORTER_ENABLE_EMBEDDED_AI
-            if (!is_remote) {
-                std::string error;
-                visual_backend =
-                    VisualLlmRuntime::resolve_active_backend(app_.settings.get_visual_model_id(),
-                                                             app_.settings.get_custom_llms(),
-                                                             &error);
-                if (!visual_backend) {
-                    throw std::runtime_error(error);
-                }
-                if (app_.core_logger && visual_backend->descriptor) {
-                    app_.core_logger->info("Using visual backend '{}' ({})",
-                                           visual_backend->descriptor->display_name,
-                                           visual_backend->descriptor->id);
-                }
-
-                vision_settings.use_gpu = VisualLlmRuntime::should_use_gpu();
-                if (visual_gpu_override.has_value()) {
-                    vision_settings.use_gpu = *visual_gpu_override;
-                }
-                vision_settings.batch_progress = [this](int current_batch, int total_batches) {
-                    if (total_batches <= 0 || current_batch <= 0) {
-                        return;
-                    }
-                    const double percent =
-                        (static_cast<double>(current_batch) / static_cast<double>(total_batches)) * 100.0;
-                    app_.append_progress(to_utf8(app_.tr("[VISION] Decoding image batch %1/%2 (%3%)")
-                                                     .arg(current_batch)
-                                                     .arg(total_batches)
-                                                     .arg(percent, 0, 'f', 2)));
-                };
-                vision_settings.log_visual_output = app_.should_log_prompts();
-            }
-#else
-            if (!is_remote) {
-                throw std::runtime_error("Local embedded visual models are not available in this endpoint-only build. Please configure an external AI endpoint with vision support in settings.");
-            }
-#endif
-
             auto update_cached_image_suggestion = [&](const FileEntry& entry,
                                                       const std::string& suggested_name) {
                 const auto it = cached_visual_indices.find(entry_key(entry));
@@ -1013,16 +959,19 @@ AnalysisRunResult AnalysisCoordinator::execute()
                     return;
                 }
 
-                const QString backend_name = visual_backend && visual_backend->descriptor
-                                                 ? QString::fromUtf8(visual_backend->descriptor->display_name)
-                                                 : app_.tr("Unknown");
+                const QString backend_name =
+                    app_.settings.get_llm_choice() == LLMChoice::Remote_OpenAI
+                        ? QStringLiteral("OpenAI")
+                        : (app_.settings.get_llm_choice() == LLMChoice::Remote_Gemini
+                               ? QStringLiteral("Gemini")
+                               : QStringLiteral("Custom API"));
                 const QString text_mode = format_compute_mode(diagnostics.text_gpu_enabled);
                 const QString mmproj_mode = format_compute_mode(diagnostics.mmproj_gpu_enabled);
                 if (!visual_runtime_summary_emitted) {
                     app_.append_progress(
                         to_utf8(app_.tr("[VISION] Runtime: backend=%1 | text=%2 | mmproj=%3 | batch_size=%4")
-                                    .arg(backend_name, text_mode, mmproj_mode)
-                                    .arg(diagnostics.batch_size)));
+                                     .arg(backend_name, text_mode, mmproj_mode)
+                                     .arg(diagnostics.batch_size)));
                     visual_runtime_summary_emitted = true;
                 }
 
@@ -1045,9 +994,7 @@ AnalysisRunResult AnalysisCoordinator::execute()
                         "filename_ms={:.1f} filename_tokenize_ms={:.1f} filename_eval_ms={:.1f} "
                         "filename_gen_ms={:.1f} total_ms={:.1f}",
                         entry.file_name,
-                        visual_backend && visual_backend->descriptor
-                            ? visual_backend->descriptor->id
-                            : "unknown",
+                        backend_name.toStdString(),
                         diagnostics.text_gpu_enabled ? "gpu" : "cpu",
                         diagnostics.mmproj_gpu_enabled ? "gpu" : "cpu",
                         diagnostics.batch_size,
@@ -1107,7 +1054,7 @@ AnalysisRunResult AnalysisCoordinator::execute()
             bool skip_visual_analysis = false;
             std::string skip_visual_reason;
 
-            if (is_remote) {
+            if (is_remote_choice(app_.settings.get_llm_choice())) {
                 try {
                     std::string base_url;
                     std::string api_key;
@@ -1142,65 +1089,6 @@ AnalysisRunResult AnalysisCoordinator::execute()
                         app_.core_logger->error("Endpoint image analyzer initialization failed: {}", ex.what());
                     }
                 }
-#if AI_FILE_SORTER_ENABLE_EMBEDDED_AI
-            } else {
-                auto create_analyzer = [&]() -> std::unique_ptr<ImageAnalyzer> {
-                    return ImageAnalyzerFactory::create(*visual_backend, vision_settings);
-                };
-
-                try {
-                    analyzer = create_analyzer();
-                } catch (const std::exception& ex) {
-                    const bool retry_on_cpu = should_retry_on_cpu(ex);
-                    if (app_.core_logger) {
-                        app_.core_logger->warn(
-                            "Visual analyzer initialization failed (retryable_on_cpu={}): {}",
-                            retry_on_cpu,
-                            ex.what());
-                    }
-                    if (!(allow_visual_cpu_fallback && retry_on_cpu)) {
-                        skip_visual_analysis = true;
-                        skip_visual_reason = ex.what();
-                        if (app_.core_logger) {
-                            app_.core_logger->warn(
-                                "Visual analysis disabled after initialization failure.");
-                        }
-                    } else {
-                        if (!visual_cpu_fallback_choice.has_value()) {
-                            visual_cpu_fallback_choice = app_.prompt_visual_cpu_fallback(ex.what());
-                        }
-                        if (!visual_cpu_fallback_choice.value()) {
-                            throw AnalysisCancelled("Visual CPU fallback declined.");
-                        } else {
-                            app_.append_progress(
-                                to_utf8(app_.tr("[VISION] Switching visual analysis to CPU.")));
-                            vision_settings.use_gpu = false;
-                            visual_cpu_fallback_active = true;
-                            if (app_.core_logger) {
-                                app_.core_logger->warn(
-                                    "Retrying visual analyzer initialization on CPU after GPU failure: {}",
-                                    ex.what());
-                            }
-                            try {
-                                analyzer = create_analyzer();
-                                if (app_.core_logger) {
-                                    app_.core_logger->info(
-                                        "Visual analyzer CPU fallback initialized successfully.");
-                                }
-                            } catch (const std::exception& init_ex) {
-                                skip_visual_analysis = true;
-                                skip_visual_reason = init_ex.what();
-                                if (app_.core_logger) {
-                                    app_.core_logger->error(
-                                        "Visual analyzer CPU fallback initialization failed: {}",
-                                        init_ex.what());
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-#else
             } else {
                 skip_visual_analysis = true;
                 skip_visual_reason = "Local embedded visual models are not available in this endpoint-only build. Please configure an external AI endpoint with vision support in settings.";
@@ -1208,7 +1096,6 @@ AnalysisRunResult AnalysisCoordinator::execute()
                     app_.core_logger->warn("{}", skip_visual_reason);
                 }
             }
-#endif
 
 
             if (skip_visual_analysis) {
@@ -1715,7 +1602,7 @@ AnalysisRunResult AnalysisCoordinator::execute()
                     }
                     const auto full_path = Utils::utf8_to_path(entry.file_path) /
                                            Utils::utf8_to_path(entry.file_name);
-                    if (!LlavaImageAnalyzer::is_supported_image(full_path)) {
+                    if (!ImageAnalyzer::is_supported_image(full_path)) {
                         continue;
                     }
                     const std::string key = file_key(entry);
@@ -2015,7 +1902,7 @@ AnalysisRunResult AnalysisCoordinator::execute()
                     const auto full_path = Utils::utf8_to_path(entry.file_path) /
                                            Utils::utf8_to_path(entry.file_name);
                     const bool supported_for_localization =
-                        LlavaImageAnalyzer::is_supported_image(full_path) ||
+                        ImageAnalyzer::is_supported_image(full_path) ||
                         DocumentTextAnalyzer::is_supported_document(full_path) ||
                         MediaRenameMetadataService::is_supported_media(full_path);
                     if (!supported_for_localization) {

@@ -3,7 +3,6 @@
 #include "CategorizationDialog.hpp"
 #include "ErrorMessages.hpp"
 #include "MainApp.hpp"
-#include "VisualLlmRuntime.hpp"
 
 #include <QAction>
 #include <QByteArray>
@@ -541,15 +540,7 @@ bool MainWindowStateBinder::visual_llm_files_available() const
         return app_.visual_llm_available_probe_();
     }
 #endif
-#if AI_FILE_SORTER_ENABLE_EMBEDDED_AI
-    return VisualLlmRuntime::resolve_active_backend(app_.settings.get_visual_model_id(),
-                                                    app_.settings.get_custom_llms(),
-                                                    nullptr)
-        .has_value();
-#else
     return is_remote_choice(app_.settings.get_llm_choice());
-#endif
-
 }
 
 void MainWindowStateBinder::update_image_analysis_controls()

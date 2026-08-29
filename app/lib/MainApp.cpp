@@ -11,9 +11,7 @@
 #include "ErrorMessages.hpp"
 #include "ExplorerExtensionEntitlement.hpp"
 #include "LLMClient.hpp"
-#include "LlmCatalog.hpp"
 #include "GeminiClient.hpp"
-#include "GgmlRuntimePaths.hpp"
 #include "LocalFsProvider.hpp"
 #include "LLMSelectionDialog.hpp"
 #include "Logger.hpp"
@@ -23,7 +21,6 @@
 #include "Updater.hpp"
 #include "TranslationManager.hpp"
 #include "Utils.hpp"
-#include "VisualLlmRuntime.hpp"
 #include "Types.hpp"
 #include "WindowsNetworkLocations.hpp"
 #include "WhatsNewContent.hpp"
@@ -500,65 +497,7 @@ std::optional<std::string> detect_status_blas_backend_label() { return std::null
 
 std::string detect_loaded_backend_key()
 {
-    if (const auto reason = GgmlRuntimePaths::sanitize_linux_backend_environment()) {
-        if (auto logger = Logger::get_logger("core_logger")) {
-            logger->warn("{}", *reason);
-        }
-    }
-
-    const auto read_env = [](const char* name) -> std::string {
-        const char* value = std::getenv(name);
-        if (!value || !*value) {
-            return {};
-        }
-        return to_lower_copy(trim_ws_copy(value));
-    };
-
-    if (std::string backend = read_env("AI_FILE_SORTER_GPU_BACKEND"); !backend.empty()) {
-        return backend;
-    }
-    if (std::string device = read_env("LLAMA_ARG_DEVICE"); !device.empty()) {
-        return device;
-    }
-
-    if (const char* ggml_dir = std::getenv("AI_FILE_SORTER_GGML_DIR");
-        ggml_dir && *ggml_dir) {
-        const std::string normalized = to_lower_copy(ggml_dir);
-        if (normalized.find("vulkan") != std::string::npos) {
-            return "vulkan";
-        }
-        if (normalized.find("cuda") != std::string::npos) {
-            return "cuda";
-        }
-        if (normalized.find("metal") != std::string::npos ||
-            normalized.find("mtl") != std::string::npos) {
-            return "metal";
-        }
-        if (normalized.find("cpu") != std::string::npos ||
-            normalized.find("wocuda") != std::string::npos) {
-            return "cpu";
-        }
-    }
-
-    const char* disable_cuda = std::getenv("GGML_DISABLE_CUDA");
-    const bool cuda_forced_off =
-        disable_cuda && disable_cuda[0] != '\0' && disable_cuda[0] != '0';
-
-    if (!cuda_forced_off && status_backend_available("CUDA")) {
-        return "cuda";
-    }
-    if (status_backend_available("Vulkan")) {
-        return "vulkan";
-    }
-    if (status_backend_available("Metal") || status_backend_available("MTL")) {
-        return "metal";
-    }
-
-    if (cuda_forced_off) {
-        return "cpu";
-    }
-
-    return "cpu";
+    return "endpoint";
 }
 
 QString backend_display_name(std::string_view backend_key)
@@ -3318,21 +3257,6 @@ void MainApp::show_suitability_benchmark_dialog(bool /*auto_start*/)
 
 void MainApp::maybe_show_suitability_benchmark()
 {
-#if AI_FILE_SORTER_ENABLE_EMBEDDED_AI
-    if (settings.get_suitability_benchmark_completed()) {
-        return;
-    }
-    if (settings.get_suitability_benchmark_suppressed()) {
-        return;
-    }
-    if (!VisualLlmRuntime::default_text_llm_files_available() && !visual_llm_files_available()) {
-        return;
-    }
-
-    QTimer::singleShot(0, this, [this]() {
-        show_suitability_benchmark_dialog(false);
-    });
-#endif
 }
 
 
@@ -3441,60 +3365,10 @@ std::unique_ptr<ILLMClient> MainApp::make_llm_client()
         return client;
     }
 
-#if AI_FILE_SORTER_ENABLE_EMBEDDED_AI
-    const auto handle_local_llm_status = [this](LocalLLMClient::Status status) {
-        schedule_backend_status_label_refresh();
-        switch (status) {
-            case LocalLLMClient::Status::GpuLowMemoryFallbackToCpu:
-                report_progress(to_utf8(
-                    tr("[WARN] Available GPU memory is too low for GPU acceleration. Continuing on CPU (slower).")));
-                return;
-            case LocalLLMClient::Status::GpuFallbackToCpu:
-                report_progress(to_utf8(
-                    tr("[WARN] GPU acceleration failed to initialize. Continuing on CPU (slower).")));
-                return;
-        }
-    };
-
-    if (choice == LLMChoice::Custom) {
-        const auto id = settings.get_active_custom_llm_id();
-        const CustomLLM custom = settings.find_custom_llm(id);
-        if (custom.id.empty() || custom.path.empty()) {
-            throw std::runtime_error("Selected custom LLM is missing or invalid. Please re-select it.");
-        }
-        auto client = std::make_unique<LocalLLMClient>(
-            custom.path,
-            [this](const std::string& reason) { return prompt_text_cpu_fallback(reason); });
-        client->set_status_callback([handle_local_llm_status](LocalLLMClient::Status status) {
-            handle_local_llm_status(status);
-        });
-        client->set_prompt_logging_enabled(should_log_prompts());
-        schedule_backend_status_label_refresh();
-        return client;
-    }
-
-    const std::filesystem::path model_path =
-        resolve_downloaded_builtin_llm_path(choice).value_or(preferred_builtin_llm_path(choice));
-    if (model_path.empty()) {
-        throw std::runtime_error("Required environment variable for selected model is not set");
-    }
-
-    auto client = std::make_unique<LocalLLMClient>(
-        Utils::path_to_utf8(model_path),
-        [this](const std::string& reason) { return prompt_text_cpu_fallback(reason); });
-    client->set_status_callback([handle_local_llm_status](LocalLLMClient::Status status) {
-        handle_local_llm_status(status);
-    });
-    client->set_prompt_logging_enabled(should_log_prompts());
-    schedule_backend_status_label_refresh();
-    return client;
-#else
     if (!is_remote_choice(choice)) {
         throw std::runtime_error("Local embedded AI models are not available in this endpoint-only build. Please select an external AI endpoint (OpenAI, Gemini, or Custom API) in Settings.");
     }
     throw std::runtime_error("Unknown or unsupported AI provider selection.");
-#endif
-
 }
 
 

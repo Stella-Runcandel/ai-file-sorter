@@ -672,17 +672,7 @@ file(GLOB APP_LIB_SOURCES CONFIGURE_DEPENDS
 set(AIFS_TEST_ONLY_APP_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/lib/MainAppTestAccess.cpp"
 )
-set(AIFS_EMBEDDED_AI_LIB_SOURCES
-    "${CMAKE_CURRENT_SOURCE_DIR}/lib/LocalLLMClient.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/lib/LlavaImageAnalyzer.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/lib/VisualLlmRuntime.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/lib/GgmlRuntimePaths.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/lib/SuitabilityBenchmarkDialog.cpp"
-)
 list(REMOVE_ITEM APP_LIB_SOURCES ${AIFS_TEST_ONLY_APP_SOURCES})
-if(NOT AI_FILE_SORTER_ENABLE_EMBEDDED_AI)
-    list(REMOVE_ITEM APP_LIB_SOURCES ${AIFS_EMBEDDED_AI_LIB_SOURCES})
-endif()
 file(GLOB APP_HEADER_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/include/*.hpp"
 )
@@ -1102,7 +1092,6 @@ if(WIN32 AND _aifs_windows_enable_starter)
     set(STARTER_TARGET StartAiFileSorter)
     add_executable(${STARTER_TARGET} WIN32
         "${CMAKE_CURRENT_SOURCE_DIR}/startapp_windows.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/lib/GgmlRuntimePaths.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/lib/WindowsCudaProbe.cpp"
     )
     set_target_properties(${STARTER_TARGET} PROPERTIES
@@ -1614,26 +1603,6 @@ if(AI_FILE_SORTER_BUILD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_single_instance_coordinator.cpp"
     )
 
-    set(AIFS_EMBEDDED_AI_TEST_SOURCES
-        "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_local_llm_backend.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_local_llm_prompt_builder.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_ggml_runtime_paths.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_llm_downloader.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_custom_llm.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_llm_selection_dialog_local.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_visual_llm_runtime.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_llm_selection_visual_backend_model.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_llm_selection_dialog_visual.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_main_app_visual_fallback.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_llava_image_analyzer.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_image_analyzer_factory.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/test_windows_cuda_probe.cpp"
-    )
-
-    if(AI_FILE_SORTER_ENABLE_EMBEDDED_AI)
-        list(APPEND AIFS_COMMON_TEST_SOURCES ${AIFS_EMBEDDED_AI_TEST_SOURCES})
-    endif()
-
     aifs_add_windows_test_executable(ai_file_sorter_tests ${AIFS_COMMON_TEST_SOURCES})
 
     aifs_add_windows_test_executable(aifs_storage_plugin_stub
@@ -1733,7 +1702,6 @@ if(AI_FILE_SORTER_BUILD_TESTS)
             "${CMAKE_CURRENT_SOURCE_DIR}/lib/UpdateInstaller.cpp"
             "${CMAKE_CURRENT_SOURCE_DIR}/lib/Updater.cpp"
             "${CMAKE_CURRENT_SOURCE_DIR}/lib/Utils.cpp"
-            "${CMAKE_CURRENT_SOURCE_DIR}/lib/VisualModelCatalog.cpp"
             "${CMAKE_CURRENT_SOURCE_DIR}/lib/WindowsCudaProbe.cpp"
             "${CMAKE_CURRENT_SOURCE_DIR}/lib/Version.cpp"
         )

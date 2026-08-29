@@ -1,7 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "DocumentTextAnalyzer.hpp"
-#include "LlavaImageAnalyzer.hpp"
+#include "ImageAnalyzer.hpp"
 #include "MainAppTestAccess.hpp"
 #include "Types.hpp"
 
@@ -62,7 +62,7 @@ Bucket expected_bucket(const FileEntry& entry,
         return restrict_types ? Bucket::None : Bucket::Other;
     }
 
-    const bool is_image = LlavaImageAnalyzer::is_supported_image(entry.full_path);
+    const bool is_image = ImageAnalyzer::is_supported_image(entry.full_path);
     const bool is_document = DocumentTextAnalyzer::is_supported_document(entry.full_path);
 
     if (is_image) {
@@ -167,7 +167,7 @@ void run_combo_matrix(const std::vector<FileEntry>& files,
         }
 
         for (const auto& entry : image_entries) {
-            CHECK(LlavaImageAnalyzer::is_supported_image(entry.full_path));
+            CHECK(ImageAnalyzer::is_supported_image(entry.full_path));
         }
         for (const auto& entry : document_entries) {
             CHECK(DocumentTextAnalyzer::is_supported_document(entry.full_path));

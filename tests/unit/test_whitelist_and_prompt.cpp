@@ -7,7 +7,7 @@
 #include "LLMErrors.hpp"
 #include "MainAppTestAccess.hpp"
 #include "CategoryLanguage.hpp"
-#include "LocalLLMTestAccess.hpp"
+#include "LocalLLMResponseSanitizer.hpp"
 #include "Settings.hpp"
 #include "TestHooks.hpp"
 #include "UserLearningStore.hpp"
@@ -851,7 +851,7 @@ TEST_CASE("LocalLLM sanitizer keeps labeled multi-line replies intact") {
         "Subcategory: Screenshots\n"
         "Reason: macOS screenshot naming pattern";
 
-    REQUIRE(LocalLLMTestAccess::sanitize_output_for_testing(output) == "Images : Screenshots");
+    REQUIRE(LocalLLMResponseSanitizer::sanitize_categorization_output(output) == "Images : Screenshots");
 }
 
 TEST_CASE("LocalLLM sanitizer prefers the last inline pair") {
@@ -860,14 +860,14 @@ TEST_CASE("LocalLLM sanitizer prefers the last inline pair") {
         "Productivity : File managers\n"
         "Archives : CAD assets";
 
-    REQUIRE(LocalLLMTestAccess::sanitize_output_for_testing(output) == "Archives : CAD assets");
+    REQUIRE(LocalLLMResponseSanitizer::sanitize_categorization_output(output) == "Archives : CAD assets");
 }
 
 TEST_CASE("LocalLLM sanitizer strips rationale and natural language lead-ins") {
     const std::string output =
         "Based on the file name and context provided, the file falls under the Finances category : Credit reports";
 
-    REQUIRE(LocalLLMTestAccess::sanitize_output_for_testing(output) == "Finances : Credit reports");
+    REQUIRE(LocalLLMResponseSanitizer::sanitize_categorization_output(output) == "Finances : Credit reports");
 }
 
 TEST_CASE("LocalLLM sanitizer ignores trailing note lines") {
@@ -875,26 +875,26 @@ TEST_CASE("LocalLLM sanitizer ignores trailing note lines") {
         "Images : Screenshots\n"
         "(Note: Since the file is an image and not an installer, this question should not have been directed to me.)";
 
-    REQUIRE(LocalLLMTestAccess::sanitize_output_for_testing(output) == "Images : Screenshots");
+    REQUIRE(LocalLLMResponseSanitizer::sanitize_categorization_output(output) == "Images : Screenshots");
 }
 
 TEST_CASE("LocalLLM sanitizer strips translated parenthetical glosses") {
     const std::string output =
         "Traitement de texte. (Text documents) : Installateurs. (Software installation)";
 
-    REQUIRE(LocalLLMTestAccess::sanitize_output_for_testing(output) == "Traitement de texte : Installateurs");
+    REQUIRE(LocalLLMResponseSanitizer::sanitize_categorization_output(output) == "Traitement de texte : Installateurs");
 }
 
 TEST_CASE("LocalLLM sanitizer strips inline subcategory label artifacts from category values") {
     const std::string output = "Category: Images, subcategory: Funny seals";
 
-    REQUIRE(LocalLLMTestAccess::sanitize_output_for_testing(output) == "Images : Funny seals");
+    REQUIRE(LocalLLMResponseSanitizer::sanitize_categorization_output(output) == "Images : Funny seals");
 }
 
 TEST_CASE("LocalLLM sanitizer strips spaced inline subcategory artifacts from category values") {
     const std::string output = "Category: Documents , subcategory Fichiers en Francais";
 
-    REQUIRE(LocalLLMTestAccess::sanitize_output_for_testing(output) == "Documents");
+    REQUIRE(LocalLLMResponseSanitizer::sanitize_categorization_output(output) == "Documents");
 }
 
 TEST_CASE("CategorizationService parses category output without spaced colon delimiters") {

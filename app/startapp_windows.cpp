@@ -12,9 +12,6 @@
 #include <QObject>
 #include <QProcessEnvironment>
 #include <QRegularExpression>
-#include <QStringList>
-
-#include "GgmlRuntimePaths.hpp"
 #include "UpdaterLaunchOptions.hpp"
 
 #include <cstdlib>
@@ -97,16 +94,6 @@ std::filesystem::path windows_executable_path(const QString& exeDir);
 
 QStringList candidateGgmlDirectories(const QString& exeDir, const QString& variant)
 {
-    if (variant == QStringLiteral("wocuda")) {
-        QStringList candidates;
-        const auto cpuCandidates = GgmlRuntimePaths::windows_cpu_runtime_candidate_dirs(
-            windows_executable_path(exeDir));
-        for (const auto& candidate : cpuCandidates) {
-            candidates << QString::fromStdWString(candidate.wstring());
-        }
-        return candidates;
-    }
-
     QStringList candidates;
     candidates << QDir(exeDir).filePath(QStringLiteral("lib/ggml/%1").arg(variant));
     candidates << QDir(exeDir).filePath(QStringLiteral("ggml/%1").arg(variant));
@@ -360,18 +347,6 @@ bool isVulkanRuntimeAvailable(const QString& exeDir) {
     }
 
     QStringList bundledCandidates;
-    const auto resolvedPayloadDir = GgmlRuntimePaths::resolve_windows_vulkan_payload_dir(
-        windows_executable_path(exeDir));
-    if (resolvedPayloadDir) {
-        bundledCandidates << QString::fromStdWString(
-            (*resolvedPayloadDir / "vulkan-1.dll").wstring());
-    } else {
-        const auto payloadCandidates = GgmlRuntimePaths::windows_vulkan_payload_candidate_dirs(
-            windows_executable_path(exeDir));
-        for (const auto& candidate : payloadCandidates) {
-            bundledCandidates << QString::fromStdWString((candidate / "vulkan-1.dll").wstring());
-        }
-    }
 
     QStringList ggmlCandidates = candidateGgmlDirectories(exeDir, QStringLiteral("wvulkan"));
     for (QString& root : ggmlCandidates) {
@@ -940,15 +915,6 @@ void configure_runtime_paths(const QString& exeDir,
         if (!cudaRuntimeDir.isEmpty()) {
             additionalDllRoots << cudaRuntimeDir;
         }
-        additionalDllRoots << QDir(exeDir).filePath(QStringLiteral("lib/precompiled/cuda/bin"));
-    }
-    if (useVulkan) {
-        const auto payloadCandidates = GgmlRuntimePaths::windows_vulkan_payload_candidate_dirs(
-            windows_executable_path(exeDir));
-        for (const auto& candidate : payloadCandidates) {
-            additionalDllRoots << QString::fromStdWString(candidate.wstring());
-        }
-    }
     additionalDllRoots << QDir(exeDir).filePath(QStringLiteral("bin"));
     additionalDllRoots << exeDir;
     for (const QString& dir : additionalDllRoots) {

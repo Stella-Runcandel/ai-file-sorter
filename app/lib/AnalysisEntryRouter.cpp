@@ -1,7 +1,7 @@
 #include "AnalysisEntryRouter.hpp"
 
 #include "DocumentTextAnalyzer.hpp"
-#include "LlavaImageAnalyzer.hpp"
+#include "ImageAnalyzer.hpp"
 #include "Utils.hpp"
 
 void AnalysisEntryRouter::split_entries_for_analysis(
@@ -41,7 +41,7 @@ void AnalysisEntryRouter::split_entries_for_analysis(
         }
         const auto full_path = Utils::utf8_to_path(entry.full_path);
         const bool is_image_entry = entry.type == FileType::File &&
-                                    LlavaImageAnalyzer::is_supported_image(full_path);
+                                    ImageAnalyzer::is_supported_image(full_path);
         const bool is_document_entry = entry.type == FileType::File &&
                                        DocumentTextAnalyzer::is_supported_document(full_path);
 

@@ -3,7 +3,6 @@
 #include "Logger.hpp"
 #include "Language.hpp"
 #include "Utils.hpp"
-#include "VisualModelCatalog.hpp"
 #include <filesystem>
 #include <cstdio>
 #include <iostream>
@@ -350,15 +349,9 @@ std::string normalize_visual_model_id(const std::string& value)
 {
     const auto trimmed = trim_copy(value);
     if (trimmed.empty()) {
-        return default_visual_model_descriptor().id;
+        return "default";
     }
-    if (is_custom_visual_model_id(trimmed)) {
-        return trimmed;
-    }
-    if (find_visual_model_descriptor(trimmed)) {
-        return trimmed;
-    }
-    return default_visual_model_descriptor().id;
+    return trimmed;
 }
 
 Language system_default_language()
@@ -462,7 +455,7 @@ Settings::Settings()
     // Default language follows system locale on first run (before any config file exists).
     language = system_default_language();
     category_language = CategoryLanguage::English;
-    visual_model_id = default_visual_model_descriptor().id;
+    visual_model_id = "default";
     analyze_images_by_content = false;
     offer_rename_images = false;
     add_image_date_place_to_filename = false;
@@ -501,7 +494,7 @@ void Settings::load_basic_settings(const std::function<bool(const char*, bool)>&
     llm_downloads_expanded = load_bool("LLMDownloadsExpanded", true);
     set_llm_storage_dir(config.getValue("Settings", "LlmStorageDir", ""));
     visual_model_id = normalize_visual_model_id(
-        config.getValue("Settings", "VisualModelId", default_visual_model_descriptor().id));
+        config.getValue("Settings", "VisualModelId", "default"));
     use_subcategories = load_bool("UseSubcategories", true);
     use_consistency_hints = load_bool("UseConsistencyHints", false);
     categorize_files = load_bool("CategorizeFiles", true);
