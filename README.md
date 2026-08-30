@@ -309,53 +309,18 @@ File categorization using local servers (like Ollama or LM Studio) is completely
 
 ### Linux
 
-#### Prebuilt Debian/Ubuntu package
-
-1. **Install runtime prerequisites** (Qt6, networking, database, math libraries):
-   - Ubuntu 24.04 / Debian 12:
-     ```bash
-     sudo apt update && sudo apt install -y \
-       libqt6widgets6 libcurl4 libjsoncpp25 libfmt9 libopenblas0-pthread \
-       libvulkan1 mesa-vulkan-drivers patchelf
-     ```
-   - Debian 13 (trixie):
-     ```bash
-     sudo apt update && sudo apt install -y \
-       libqt6widgets6 libcurl4t64 libjsoncpp26 libfmt10 libopenblas0-pthread \
-       libvulkan1 mesa-vulkan-drivers patchelf
-     ```
-   If you build the Vulkan backend from source, install `glslc` (Debian/Ubuntu package: `glslc`; on some distros: `shaderc` or `shaderc-tools`).
-   On Debian 13, use `libjsoncpp26`, `libfmt10`, and `libcurl4t64` (APT may auto-select `libcurl4t64` if `libcurl4` is not available).
-   Ensure that the Qt platform plugins are installed (on Ubuntu 22.04 this is provided by `qt6-wayland`).
-   GPU acceleration additionally requires either a working Vulkan 1.2+ stack (Mesa, AMD/Intel/NVIDIA drivers) or, for NVIDIA users, the matching CUDA runtime (`nvidia-cuda-toolkit` or vendor packages). The launcher automatically prefers CUDA when both are present and falls back to CPU if neither is available.
-2. **Install the package**
-   ```bash
-   sudo apt install ./aifilesorter_*.deb
-   ```
-   Using `apt install` (rather than `dpkg -i`) ensures any missing dependencies listed above are installed automatically.
-
-#### Build from source
-
-1. **Install dependencies**
-   - Debian / Ubuntu:
-    ```bash
-    sudo apt update && sudo apt install -y \
-      build-essential cmake git qt6-base-dev qt6-base-dev-tools qt6-l10n-tools qt6-tools-dev-tools \
-      libcurl4-openssl-dev libjsoncpp-dev libsqlite3-dev libssl-dev libfmt-dev libspdlog-dev libmediainfo-dev \
-      zlib1g-dev patchelf
-    ### Linux
-
 #### Prerequisites & Installation
 
 1. **Install system dependencies**:
-   - **Ubuntu 24.04 / Debian 12**:
+   - **Ubuntu 24.04+ / Debian 12+**:
      ```bash
      sudo apt update && sudo apt install -y \
        build-essential cmake ninja-build pkg-config git \
-       qt6-base-dev qt6-tools-dev libcurl4-openssl-dev \
+       qt6-base-dev qt6-tools-dev libcurl4-gnutls-dev \
        libjsoncpp-dev libsqlite3-dev libssl-dev libfmt-dev \
        libspdlog-dev libmediainfo-dev libwebp-dev zlib1g-dev
      ```
+     *(Note: `libcurl4-gnutls-dev` is used to resolve compatibility with `libmediainfo-dev` without apt package conflicts).*
    - **Fedora 40+ / RHEL 9+**:
      ```bash
      sudo dnf install -y \
@@ -373,10 +338,15 @@ File categorization using local servers (like Ollama or LM Studio) is completely
 
 2. **Clone the repository and submodules**:
    ```bash
-   git clone https://github.com/hyperfield/ai-file-sorter.git
+   # Clone the repository (active fork):
+   git clone https://github.com/Stella-Runcandel/ai-file-sorter.git
+   # Or clone upstream:
+   # git clone https://github.com/hyperfield/ai-file-sorter.git
+
    cd ai-file-sorter
    git submodule update --init --recursive
    ```
+   *(Submodules include Catch2 under `external/Catch2` for unit testing. Legacy embedded AI submodules such as llama.cpp have been completely removed).*
 
 3. **Configure and build with CMake**:
    ```bash
@@ -432,7 +402,11 @@ Native Windows compilation uses MSVC and project-local vcpkg dependencies in man
 
 1. **Clone repository and submodules**:
    ```powershell
-   git clone https://github.com/hyperfield/ai-file-sorter.git
+   # Clone the repository (active fork):
+   git clone https://github.com/Stella-Runcandel/ai-file-sorter.git
+   # Or clone upstream:
+   # git clone https://github.com/hyperfield/ai-file-sorter.git
+
    cd ai-file-sorter
    git submodule update --init --recursive
    ```

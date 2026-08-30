@@ -1,8 +1,8 @@
-# Project: Phase 1 Endpoint-Based Multimodal AI Architecture (hyperfield/ai-file-sorter)
+# Project: Endpoint-Based Multimodal AI Architecture (Stella-Runcandel/ai-file-sorter, upstream: hyperfield/ai-file-sorter)
 
 ## Architecture
-Modernize `hyperfield/ai-file-sorter` from an in-process llama.cpp / mtmd coupling to an endpoint-first, provider-agnostic AI architecture.
-The system supports both text-only and multimodal (image + text) categorization via standard OpenAI-compatible endpoints (`/v1/chat/completions`), while preserving existing `LocalLLMClient`, `LlavaImageAnalyzer`, and embedded `llama.cpp` implementations as buildable, legacy parallel options with ZERO silent fallback.
+Modernize the application from an in-process llama.cpp / mtmd coupling to an endpoint-first, provider-agnostic AI architecture.
+The system supports both text-only and multimodal (image + text) categorization via standard OpenAI-compatible endpoints (`/v1/chat/completions`) with strict ZERO silent fallback.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
