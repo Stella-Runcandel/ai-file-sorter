@@ -309,62 +309,78 @@ File categorization using local servers (like Ollama or LM Studio) is completely
 
 ### Linux
 
-#### Prerequisites & Installation
+Native Linux is a primary, first-class supported platform. You do not need Docker or containers to build or run AI File Sorter.
 
-1. **Install system dependencies**:
-   - **Ubuntu 24.04+ / Debian 12+**:
-     ```bash
-     sudo apt update && sudo apt install -y \
-       build-essential cmake ninja-build pkg-config git \
-       qt6-base-dev qt6-tools-dev libcurl4-gnutls-dev \
-       libjsoncpp-dev libsqlite3-dev libssl-dev libfmt-dev \
-       libspdlog-dev libmediainfo-dev libwebp-dev zlib1g-dev
-     ```
-     *(Note: `libcurl4-gnutls-dev` is used to resolve compatibility with `libmediainfo-dev` without apt package conflicts).*
-   - **Fedora 40+ / RHEL 9+**:
-     ```bash
-     sudo dnf install -y \
-       gcc-c++ cmake ninja-build git pkgconf-pkg-config \
-       qt6-qtbase-devel qt6-qttools-devel libcurl-devel \
-       jsoncpp-devel sqlite-devel openssl-devel fmt-devel \
-       spdlog-devel libmediainfo-devel libwebp-devel zlib-devel
-     ```
-   - **Arch / Manjaro**:
-     ```bash
-     sudo pacman -S --needed \
-       base-devel git cmake ninja pkgconf qt6-base qt6-tools \
-       curl jsoncpp sqlite openssl fmt spdlog mediainfo libwebp zlib
-     ```
+#### Supported Distributions
+- **Ubuntu 24.04 LTS (Noble Numbat)** & **Ubuntu 26.04**
+- **Debian 12 (Bookworm)** & **Debian 13 (Trixie)**
+- **Fedora 40+** / **RHEL 9+**
+- **Arch Linux** / **Manjaro**
 
-2. **Clone the repository and submodules**:
-   ```bash
-   # Clone the repository (active fork):
-   git clone https://github.com/Stella-Runcandel/ai-file-sorter.git
-   # Or clone upstream:
-   # git clone https://github.com/hyperfield/ai-file-sorter.git
+#### 1. Install System Dependencies
 
-   cd ai-file-sorter
-   git submodule update --init --recursive
-   ```
-   *(Submodules include Catch2 under `external/Catch2` for unit testing. Legacy embedded AI submodules such as llama.cpp have been completely removed).*
+- **Ubuntu / Debian**:
+  ```bash
+  sudo apt update && sudo apt install -y \
+    build-essential cmake ninja-build pkg-config git \
+    qt6-base-dev qt6-tools-dev qt6-l10n-tools \
+    libcurl4-gnutls-dev libjsoncpp-dev libsqlite3-dev \
+    libssl-dev libfmt-dev libspdlog-dev libmediainfo-dev \
+    libwebp-dev zlib1g-dev
+  ```
+  > [!NOTE]
+  > On Debian/Ubuntu, `libcurl4-gnutls-dev` is used because it provides the standard `libcurl` development headers while co-installing cleanly with `libmediainfo-dev` without package conflicts. If you prefer to use `libcurl4-openssl-dev`, you can omit `libmediainfo-dev` and configure CMake with `-DAI_FILE_SORTER_REQUIRE_MEDIAINFOLIB=OFF` (which uses built-in audio/video metadata parsers).
 
-3. **Configure and build with CMake**:
-   ```bash
-   cmake -S app -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-   cmake --build build --parallel
-   ```
+- **Fedora 40+ / RHEL 9+**:
+  ```bash
+  sudo dnf install -y \
+    gcc-c++ cmake ninja-build git pkgconf-pkg-config \
+    qt6-qtbase-devel qt6-qttools-devel libcurl-devel \
+    jsoncpp-devel sqlite-devel openssl-devel fmt-devel \
+    spdlog-devel libmediainfo-devel libwebp-devel zlib-devel
+  ```
 
-4. **Run the application**:
-   ```bash
-   ./build/aifilesorter
-   ```
+- **Arch Linux / Manjaro**:
+  ```bash
+  sudo pacman -S --needed \
+    base-devel git cmake ninja pkgconf qt6-base qt6-tools \
+    curl jsoncpp sqlite openssl fmt spdlog mediainfo libwebp zlib
+  ```
 
-5. **Run the unit tests**:
-   ```bash
-   ctest --test-dir build --output-on-failure
-   ```
+#### 2. Clone the Repository
 
-*(Alternatively, use VS Code with the provided `.devcontainer` configuration for a 1-click isolated build environment).*
+```bash
+# Clone the repository (active fork):
+git clone https://github.com/Stella-Runcandel/ai-file-sorter.git
+# Or clone upstream:
+# git clone https://github.com/hyperfield/ai-file-sorter.git
+
+cd ai-file-sorter
+git submodule update --init --recursive
+```
+*(Submodules include Catch2 under `external/Catch2` for unit testing. Legacy embedded AI submodules such as llama.cpp have been completely removed).*
+
+#### 3. Configure and Build
+
+```bash
+# Configure with CMake (release mode):
+cmake -S app -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DAI_FILE_SORTER_BUILD_TESTS=ON
+
+# Compile the application:
+cmake --build build --parallel
+```
+
+#### 4. Run Application & Tests
+
+```bash
+# Launch the GUI:
+./build/aifilesorter
+
+# Run unit tests:
+ctest --test-dir build --output-on-failure
+```
+
+*(Optional: For developers who prefer containerized builds, an optional VS Code Dev Container configuration is also provided under `.devcontainer/`).*
 
 ---
 
