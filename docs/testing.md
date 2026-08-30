@@ -5,58 +5,43 @@ complement, not replace, the detailed case catalog in `TESTS.md`.
 
 ## Main test layers
 
-- **Catch2/CTest unit and integration tests**: the normal automated test suite.
-- **`TESTS.md`**: detailed case-by-case intent, setup, procedure, and expected
-  outcomes.
-- **Production self-test mode**: `--self-test` and `--self-test=whitelist`
-  provide deterministic checks from the built app.
-- **Opt-in live headless LLM tests**:
-  `tests/live_llm/headless_live_llm_tests.py` runs the production headless path
-  with a real local model and real/generated fixtures.
+- **Catch2/CTest unit and integration tests**: the normal automated test suite testing endpoint domain models, URL resolution, HTTP transport, multimodal preprocessing, secret masking, and categorization workflows.
+- **`TESTS.md`**: detailed case-by-case intent, setup, procedure, and expected outcomes.
+- **Production self-test mode**: `--self-test` and `--self-test=whitelist` provide deterministic checks from the built app.
 
 ## Common commands
 
-Build and run the normal test suite:
+Build and run the normal test suite on Linux:
 
 ```text
-cmake --build build-tests --config Release --target ai_file_sorter_tests --parallel
-ctest --test-dir build-tests -C Release --output-on-failure
+cmake -S app -B build -DAI_FILE_SORTER_BUILD_TESTS=ON
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
+```
+
+Build and run on Windows:
+
+```powershell
+.\app\build_windows.ps1 -Configuration Release -BuildTests -RunTests
 ```
 
 Run a single Catch2 case:
 
 ```text
-./build-tests/ai_file_sorter_tests "<test case name or pattern>"
+./build/tests/ai_file_sorter_tests "<test case name or pattern>"
 ```
 
-On Windows multi-config builds, the direct executable lives under
-`./build-tests/tests/<Config>/`, for example:
+On Windows, the direct executable lives under `.\app\build-windows\tests\Release\ai_file_sorter_tests.exe`:
 
-```text
-./build-tests/tests/Release/ai_file_sorter_tests.exe "<test case name or pattern>"
+```powershell
+.\app\build-windows\tests\Release\ai_file_sorter_tests.exe "<test case name or pattern>"
 ```
-
-Windows test targets copy the matching vcpkg runtime DLLs beside each test
-executable after the target builds. If a direct `ctest` run fails because a DLL
-is missing or stale, rebuild the relevant test target before rerunning `ctest`.
 
 ## When to run what
 
-- Prompt or taxonomy changes: run the prompt-builder and categorization-focused
-  tests first.
-- Headless or Explorer-adjacent changes: run focused `Headless*` tests and keep
-  `TESTS.md` in sync.
+- Endpoint provider or URL resolver changes: run `test_endpoint_url_resolver.cpp` and `test_openai_compatible_provider.cpp`.
+- Vision / multimodal changes: run `test_vision_image_preprocessor.cpp`.
+- Taxonomy and categorization changes: run `test_dual_path_coexistence.cpp` and `test_e2e_mixed_workload.cpp`.
+- Headless or Explorer-adjacent changes: run focused `Headless*` tests and keep `TESTS.md` in sync.
 - Updater/feed changes: run the updater and update-feed tests.
-- Packaging/build-script changes: validate the relevant platform build path in
-  addition to unit tests.
-
-## Live headless LLM tests
-
-The opt-in live suite is useful when you want to validate the real runtime,
-selected local model, emitted status JSON, and actual filesystem effects. It is
-not part of the normal fast unit-test loop.
-
-See these references for the full details:
-
-- `TESTS.md`
-- `tests/live_llm/README.md`
+- Packaging/build-script changes: validate the relevant platform build path in addition to unit tests.

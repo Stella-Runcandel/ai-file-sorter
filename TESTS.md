@@ -3,16 +3,12 @@
 This document provides a detailed description of every test case in the project. It is organized by test file and mirrors the intent, setup, procedure, and expected outcomes for each case. All unit tests live under `tests/unit`. UI-centric tests use a headless Qt platform plugin so they can run without a visible display: `minimal` on Windows and `offscreen` on other platforms.
 
 ## How to run tests
-- Configure tests on Linux/macOS (once): `cmake -S app -B build-tests -DAI_FILE_SORTER_BUILD_TESTS=ON -DAI_FILE_SORTER_REQUIRE_MEDIAINFOLIB=ON`
+- Configure tests on Linux/macOS: `cmake -S app -B build-tests -DAI_FILE_SORTER_BUILD_TESTS=ON -DAI_FILE_SORTER_REQUIRE_MEDIAINFOLIB=ON`
 - Build and run all tests on Linux/macOS: `cmake --build build-tests` then `ctest --test-dir build-tests --output-on-failure -j $(nproc)`
-- On Windows, configure from a Visual Studio Developer PowerShell with the vcpkg toolchain and a Qt 6 MSVC kit, for example: `$env:VCPKG_ROOT="D:\path\to\vcpkg"; $qt="C:\Qt\6.6.3\msvc2019_64"; $toolchain=Join-Path $env:VCPKG_ROOT "scripts\buildsystems\vcpkg.cmake"; cmake -S app -B build-tests -G "Ninja" -DCMAKE_PREFIX_PATH=$qt "-DCMAKE_TOOLCHAIN_FILE=$toolchain" -DVCPKG_MANIFEST_DIR=app -DVCPKG_TARGET_TRIPLET=x64-windows -DAI_FILE_SORTER_BUILD_TESTS=ON -DAI_FILE_SORTER_REQUIRE_MEDIAINFOLIB=ON`
-- On Windows, build and run all tests with: `cmake --build build-tests --config Release --target ai_file_sorter_tests ai_file_sorter_updater_notify_only_tests ai_file_sorter_updater_disabled_tests --parallel $env:NUMBER_OF_PROCESSORS` then `ctest --test-dir build-tests -C Release --output-on-failure -j $env:NUMBER_OF_PROCESSORS`
+- On Windows, build and run using `app/build_windows.ps1`: `.\app\build_windows.ps1 -Configuration Release -BuildTests -RunTests`
 - Run a single test case by name: `./build-tests/ai_file_sorter_tests "<test case name or pattern>"`
-- On Windows multi-config builds, the direct test executable lives under `./build-tests/tests/<Config>/`, for example: `./build-tests/tests/Release/ai_file_sorter_tests.exe "<test case name or pattern>"`
-- Run GUI test mode: `./build-tests/aifilesorter --test`
+- On Windows, the direct test executable lives at `./app/build-windows/tests/Release/ai_file_sorter_tests.exe "<test case name or pattern>"`
 - Run production-binary self-tests: `./build-tests/aifilesorter --self-test` or `./build-tests/aifilesorter --self-test=whitelist`
-- Register optional live LLM headless tests by adding `-DAI_FILE_SORTER_ENABLE_LIVE_LLM_TESTS=ON` when configuring tests, or on Windows by running `.\app\build_windows.ps1 -Configuration Release -Variants Standard -BuildTests -EnableLiveLlmTests` in PowerShell or `app\build_windows.cmd -Configuration Release -Variants Standard -BuildTests -EnableLiveLlmTests` in `cmd.exe`. Then either set `AI_FILE_SORTER_LIVE_LLM_MODEL` to a local text GGUF path or rely on the selected local/custom GGUF in AI File Sorter `config.ini`, optionally set `AI_FILE_SORTER_LIVE_BACKEND=cpu|cuda|vulkan|auto` (`cuda` validates CUDA explicitly; `cpu` is for deterministic CPU/OpenBLAS runs), and run `ctest --test-dir build-tests -L live-llm --output-on-failure` for manual CMake builds or `ctest --test-dir app\build-windows -C Release -L live-llm --output-on-failure` for the Windows helper build. Use `ctest -V` for live progress; otherwise tail the work dir from `%TEMP%\aifs-live-llm-latest.txt`. Image rename cases also require `AI_FILE_SORTER_LIVE_VISUAL_MODEL` and `AI_FILE_SORTER_LIVE_VISUAL_MMPROJ`, unless a custom visual model pair is selected in settings.
-- If Windows CMake reports a missing Visual Studio instance from an existing `build-tests` directory, use `cmake --fresh` when supported, delete/recreate that build directory, or choose a new build directory; the Visual Studio path is stored in `CMakeCache.txt`.
 - MediaInfo is expected from a package manager (`apt`/`dnf`/`pacman`/`brew`/`vcpkg`); vendored MediaInfo directories/binaries are intentionally rejected by the build.
 
 ## App test modes
@@ -103,156 +99,68 @@ Procedure: Strip suffixes by expected file kind.
 Expected outcome: Only valid suffixes for the requested kind are removed.
 Run: `./build-tests/ai_file_sorter_tests "CategoryDateSuffix strips generated suffixes by kind"`
 
-### `tests/unit/test_local_llm_backend.cpp` (skipped when `GGML_USE_METAL` is defined)
+### `tests/unit/test_ai_domain_models.cpp`
 
-#### Test case: detect_preferred_backend reads environment
-Purpose: Verify that the backend preference resolver honors the explicit environment override.
-Setup: Set `AI_FILE_SORTER_GPU_BACKEND` to `cuda` via an environment guard.
-Procedure: Call `detect_preferred_backend()` through the test access layer.
-Expected outcome: The detected preference is `Cuda`.
-Run: `./build-tests/ai_file_sorter_tests "detect_preferred_backend reads environment"`
+#### Test case: Canonical AI domain models validation
+Purpose: Verify constructors, getters, and serialization for `AIRequest`, `AIResponse`, `AIMessage`, and `AIContentPart`.
+Setup: Construct text and multimodal domain models with diverse payloads.
+Procedure: Validate message parsing, role mapping, multimodal detection, and content extraction.
+Expected outcome: All domain models behave deterministically according to the OpenAI multimodal specification.
+Run: `./build-tests/ai_file_sorter_tests "Canonical AI domain models"`
 
-#### Test case: Document categorization uses a document-specific system prompt
-Purpose: Ensure both analyzable and legacy Office document files use the document-oriented categorization instructions instead of the generic file prompt, including the new allowed-main-category restriction.
-Setup: Provide representative `.pdf` and `.doc` paths to the local LLM test access layer.
-Procedure: Build the categorization system prompt for each file.
-Expected outcome: Both prompts reference filesystem-oriented document categorization guidance and omit the generic installer guidance.
-Run: `./build-tests/ai_file_sorter_tests "Document categorization uses a document-specific system prompt"`
+### `tests/unit/test_endpoint_url_resolver.cpp`
 
-#### Test case: Document categorization uses a document-specific user prompt
-Purpose: Ensure both summarized document files and legacy Office document files use the dedicated user prompt shape.
-Setup: Provide a `.pdf` file name with a `Document summary:` payload, a legacy `.doc` file name without a summary, and a sample consistency context block.
-Procedure: Build the categorization user prompt through the local LLM test access layer for both files.
-Expected outcome: Both prompts start with the document-specific instruction text, include file name and path, keep the shared guidance, and omit the generic `Full path:` framing; only the summarized file includes a `Document summary:` line.
-Run: `./build-tests/ai_file_sorter_tests "Document categorization uses a document-specific user prompt"`
+#### Test case: Endpoint URL normalization and endpoint resolution
+Purpose: Verify that base URLs (Ollama, LM Studio, vLLM, OpenAI, custom gateways) are normalized correctly into `/v1/chat/completions` and `/v1/models` endpoints.
+Setup: Provide naked hostnames, ports, trailing slashes, and paths with or without `/v1`.
+Procedure: Resolve endpoints via `EndpointUrlResolver`.
+Expected outcome: All URLs resolve to well-formed standard endpoints.
+Run: `./build-tests/ai_file_sorter_tests "Endpoint URL resolver"`
 
-#### Test case: Image categorization uses refined local prompts when refined mode is requested
-Purpose: Ensure the local image prompt path relaxes the fixed `Images` bucket when `More refined` guidance is present.
-Setup: Provide an image prompt path with an `Image description:` payload and a consistency context block starting with `Sorting style: More refined`.
-Procedure: Build both the categorization system prompt and user prompt through the local LLM test access layer.
-Expected outcome: The system prompt allows a content-specific main category, and the user prompt switches to the generic `<Main category> : <Subcategory>` answer format instead of forcing `Images : <Subcategory>`.
-Run: `./build-tests/ai_file_sorter_tests "Image categorization uses refined local prompts when refined mode is requested"`
+### `tests/unit/test_openai_compatible_provider.cpp`
 
-#### Test case: Generic file categorization user prompt includes explicit answer format
-Purpose: Keep the generic file prompt short while still forcing the model back into the strict `<Main category> : <Subcategory>` response shape.
-Setup: Provide a representative software-like file name and a sample allowed-main-category block.
-Procedure: Build the generic categorization user prompt through the local LLM test access layer.
-Expected outcome: The prompt includes the full path, file name, allowed main categories, and an explicit one-line answer template.
-Run: `./build-tests/ai_file_sorter_tests "Generic file categorization user prompt includes explicit answer format"`
+#### Test case: OpenAICompatibleProvider HTTP request and response serialization
+Purpose: Verify libcurl HTTP transport, Bearer authentication headers, status code handling, JSON payload serialization, and response parsing.
+Setup: Use loopback `MockOpenAIServer` socket harness simulating standard completions, vision completions, 429 rate limits, and 400 errors.
+Procedure: Execute synchronous and asynchronous completions through `OpenAICompatibleProvider`.
+Expected outcome: Success responses return parsed text; errors throw clear typed exceptions with zero silent fallback.
+Run: `./build-tests/ai_file_sorter_tests "OpenAICompatibleProvider"`
 
-#### Test case: CPU backend is honored when forced
-Purpose: Ensure the GPU layer count is forced to CPU when the backend is set to CPU.
-Setup: Create a temporary GGUF model file and set `AI_FILE_SORTER_GPU_BACKEND=cpu`. Ensure no CUDA disable flag or layer override is set.
-Procedure: Call `prepare_model_params_for_testing()` for the temporary model.
-Expected outcome: `n_gpu_layers` is `0`.
-Run: `./build-tests/ai_file_sorter_tests "CPU backend is honored when forced"`
+### `tests/unit/test_vision_image_preprocessor.cpp`
 
-#### Test case: CUDA backend can be forced off via GGML_DISABLE_CUDA
-Purpose: Confirm that the global CUDA disable flag overrides a CUDA backend preference.
-Setup: Set `AI_FILE_SORTER_GPU_BACKEND=cuda` and `GGML_DISABLE_CUDA=1`. Inject a backend-availability probe that reports CUDA available.
-Procedure: Call `prepare_model_params_for_testing()`.
-Expected outcome: `n_gpu_layers` is `0`, indicating CPU fallback.
-Run: `./build-tests/ai_file_sorter_tests "CUDA backend can be forced off via GGML_DISABLE_CUDA"`
+#### Test case: Client-side image downscaling and base64 transcoding
+Purpose: Verify that input images are decoded in-memory, downscaled to max 2048x2048 preserving aspect ratio, transcoded to JPEG/PNG, and formatted as base64 data URIs.
+Setup: Provide sample PNG, JPEG, and WebP images.
+Procedure: Preprocess images through `ImagePreprocessingService` and `EndpointImageAnalyzer`.
+Expected outcome: Correct MIME types, valid Base64 data URIs, and dimensions within 2048x2048 limits.
+Run: `./build-tests/ai_file_sorter_tests "Vision image preprocessor"`
 
-#### Test case: CUDA override is applied when backend is available
-Purpose: Validate that an explicit layer override is used when the ggml CUDA backend is available, even if backend memory metrics are absent.
-Setup: Set `AI_FILE_SORTER_GPU_BACKEND=cuda`, set `AI_FILE_SORTER_N_GPU_LAYERS=7`, inject a backend-availability probe for CUDA, and inject a backend-memory probe that returns no metrics.
-Procedure: Call `prepare_model_params_for_testing()`.
-Expected outcome: `n_gpu_layers` equals `7`.
-Run: `./build-tests/ai_file_sorter_tests "CUDA override is applied when backend is available"`
+### `tests/unit/test_safe_logging_secret_masking.cpp`
 
-#### Test case: LocalLLMClient builds a descending GPU-layer retry ladder from optimistic and conservative estimates
-Purpose: Ensure GPU model-load retries probe a deterministic sequence before giving up on the backend.
-Setup: Provide an optimistic layer count of `20` and a conservative layer count of `15`.
-Procedure: Build the retry ladder through the LocalLLM test access helper.
-Expected outcome: The ladder is exactly `20, 15, 11, 8, 6, 4, 3, 2, 1`, with each retry smaller than the last.
-Run: `./build-tests/ai_file_sorter_tests "LocalLLMClient builds a descending GPU-layer retry ladder from optimistic and conservative estimates"`
+#### Test case: Secret masking and log sanitization
+Purpose: Ensure sensitive API keys, Authorization headers, and massive Base64 image payloads are redacted before writing to log files or terminal output.
+Setup: Provide raw payloads containing `sk-...` API keys and `data:image/jpeg;base64,...` URIs.
+Procedure: Sanitize through `SecretMasker`.
+Expected outcome: API keys are masked (e.g. `sk-****cdef`), Base64 payloads are truncated with token markers, and logs remain safe.
+Run: `./build-tests/ai_file_sorter_tests "Safe logging secret masking"`
 
-#### Test case: LocalLLMClient deduplicates matching retry estimates before reducing GPU layers
-Purpose: Avoid redundant GPU reload attempts when optimistic and conservative estimates are the same.
-Setup: Provide matching optimistic and conservative layer counts of `15`.
-Procedure: Build the retry ladder through the LocalLLM test access helper.
-Expected outcome: The ladder starts at `15` once and then descends to `11, 8, 6, 4, 3, 2, 1` without duplicate entries.
-Run: `./build-tests/ai_file_sorter_tests "LocalLLMClient deduplicates matching retry estimates before reducing GPU layers"`
+### `tests/unit/test_dual_path_coexistence.cpp`
 
-#### Test case: CUDA backend reports low GPU memory before load
-Purpose: Ensure CUDA preflight checks fall back to CPU before model load when the ggml CUDA backend reports too little available VRAM.
-Setup: Set `AI_FILE_SORTER_GPU_BACKEND=cuda`, leave the layer override unset, inject a backend-availability probe for CUDA, and inject backend memory with extremely low free memory.
-Procedure: Call `prepare_model_params_result_for_testing()` for a temporary model with enough layers to exceed the reported budget.
-Expected outcome: `n_gpu_layers` is `0` and the captured status is `GpuLowMemoryFallbackToCpu`.
-Run: `./build-tests/ai_file_sorter_tests "CUDA backend reports low GPU memory before load"`
+#### Test case: Dual-path categorization and strict zero fallback
+Purpose: Confirm that remote endpoint mode delegates categorization strictly through `IAIProvider` and never silently falls back to local execution on error.
+Setup: Configure mock endpoints with injected network timeouts and HTTP 500 errors.
+Procedure: Run categorization through `CategorizationService`.
+Expected outcome: Errors are reported explicitly to the user without silent local execution.
+Run: `./build-tests/ai_file_sorter_tests "Dual-path coexistence"`
 
-#### Test case: CUDA backend falls back to CPU when backend memory metrics are unavailable
-Purpose: Ensure CUDA preflight declines GPU offload instead of hanging or guessing when the ggml CUDA backend cannot report memory metrics and no explicit layer override is set.
-Setup: Set `AI_FILE_SORTER_GPU_BACKEND=cuda`, leave the layer override unset, inject a backend-availability probe for CUDA, and inject a backend-memory probe that returns no data.
-Procedure: Call `prepare_model_params_for_testing()`.
-Expected outcome: `n_gpu_layers` is `0`, indicating a safe CPU fallback.
-Run: `./build-tests/ai_file_sorter_tests "CUDA backend falls back to CPU when backend memory metrics are unavailable"`
+### `tests/unit/test_e2e_mixed_workload.cpp`
 
-#### Test case: Auto backend prefers CUDA when both backends are possible
-Purpose: Verify that automatic backend selection uses CUDA before Vulkan.
-Setup: Leave `AI_FILE_SORTER_GPU_BACKEND` unset, clear `GGML_DISABLE_CUDA`, set `AI_FILE_SORTER_N_GPU_LAYERS=7`, inject a backend-availability probe that reports CUDA available, and inject a backend-memory probe that returns no metrics.
-Procedure: Call `prepare_model_params_for_testing()`.
-Expected outcome: `n_gpu_layers` equals `7`, proving the auto path chose CUDA without consulting Vulkan first.
-Run: `./build-tests/ai_file_sorter_tests "Auto backend prefers CUDA when both backends are possible"`
-
-#### Test case: Auto backend falls back to Vulkan when CUDA is disabled
-Purpose: Ensure automatic backend selection still reaches Vulkan when CUDA is globally disabled.
-Setup: Leave `AI_FILE_SORTER_GPU_BACKEND` unset, set `GGML_DISABLE_CUDA=1`, set `AI_FILE_SORTER_N_GPU_LAYERS=12`, and inject a Vulkan-available probe.
-Procedure: Call `prepare_model_params_for_testing()`.
-Expected outcome: `n_gpu_layers` equals `12`, proving the auto path fell through to Vulkan instead of CPU.
-Run: `./build-tests/ai_file_sorter_tests "Auto backend falls back to Vulkan when CUDA is disabled"`
-
-#### Test case: CUDA fallback when no GPU is available
-Purpose: Ensure CUDA preference falls back when no ggml CUDA backend is detected.
-Setup: Set `AI_FILE_SORTER_GPU_BACKEND=cuda`, leave layer override unset, and inject a backend-availability probe that reports CUDA unavailable.
-Procedure: Call `prepare_model_params_for_testing()`.
-Expected outcome: `n_gpu_layers` is `0`.
-Run: `./build-tests/ai_file_sorter_tests "CUDA fallback when no GPU is available"`
-
-#### Test case: Vulkan backend honors explicit override
-Purpose: Check that Vulkan backend respects a specific GPU layer override.
-Setup: Set `AI_FILE_SORTER_GPU_BACKEND=vulkan`, set `AI_FILE_SORTER_N_GPU_LAYERS=12`, and provide a memory probe that returns no data.
-Procedure: Call `prepare_model_params_for_testing()`.
-Expected outcome: `n_gpu_layers` equals `12`.
-Run: `./build-tests/ai_file_sorter_tests "Vulkan backend honors explicit override"`
-
-#### Test case: Vulkan backend derives layer count from memory probe
-Purpose: Verify that Vulkan backend derives a sensible layer count from reported GPU memory.
-Setup: Use a model with 48 blocks, set `AI_FILE_SORTER_GPU_BACKEND=vulkan`, and inject a probe reporting a 3 GB discrete GPU.
-Procedure: Call `prepare_model_params_for_testing()`.
-Expected outcome: `n_gpu_layers` is greater than `0` and less than or equal to `48`.
-Run: `./build-tests/ai_file_sorter_tests "Vulkan backend derives layer count from memory probe"`
-
-#### Test case: Vulkan backend reports low GPU memory before load
-Purpose: Ensure Vulkan preflight checks fall back to CPU before model load when available VRAM is too low.
-Setup: Set `AI_FILE_SORTER_GPU_BACKEND=vulkan`, leave the layer override unset, inject a Vulkan-available probe, and inject backend memory with extremely low free memory.
-Procedure: Call `prepare_model_params_result_for_testing()` for a temporary model with enough layers to exceed the reported budget.
-Expected outcome: `n_gpu_layers` is `0` and the captured status is `GpuLowMemoryFallbackToCpu`.
-Run: `./build-tests/ai_file_sorter_tests "Vulkan backend reports low GPU memory before load"`
-
-### `tests/unit/test_local_llm_prompt_builder.cpp`
-
-#### Test case: LocalLLMPromptBuilder preserves specialized prompt routing
-Purpose: Verify the extracted prompt builder still selects image, document, and directory system prompts from the target context.
-Setup: Provide representative image-description, document, and directory prompt paths.
-Procedure: Build system prompts through `LocalLLMPromptBuilder`.
-Expected outcome: Each target gets its specialized prompt text.
-Run: `./build-tests/ai_file_sorter_tests "LocalLLMPromptBuilder preserves specialized prompt routing"`
-
-#### Test case: LocalLLMPromptBuilder strips image guidance from image prompts only
-Purpose: Keep image categorization prompts concise by removing duplicated image-specific guidance while preserving whitelist context.
-Setup: Provide an image prompt path with a visual description and consistency context containing image guidance plus allowed categories.
-Procedure: Build the user prompt through `LocalLLMPromptBuilder`.
-Expected outcome: The image guidance block is removed, while allowed categories and the image description remain.
-Run: `./build-tests/ai_file_sorter_tests "LocalLLMPromptBuilder strips image guidance from image prompts only"`
-
-#### Test case: LocalLLMPromptBuilder shrinks long analysis sections before truncating prompt
-Purpose: Ensure context fallback retries trim long document or image analysis sections without losing category restrictions or answer-format instructions.
-Setup: Build a document prompt containing a long `Document summary:` section.
-Procedure: Shrink the prompt for a retry attempt.
-Expected outcome: The summary is shortened with an ellipsis and the allowed-category and answer-format sections remain present.
-Run: `./build-tests/ai_file_sorter_tests "LocalLLMPromptBuilder shrinks long analysis sections before truncating prompt"`
+#### Test case: Full end-to-end mixed workload categorization
+Purpose: Verify complete pipeline operation across PDF, DOCX, images, audio, and code files with mock endpoint responses.
+Setup: Populate mock folder structure with diverse test fixtures.
+Procedure: Execute full analysis flow and inspect generated review plans.
+Expected outcome: 100% of files receive valid categorization results matching mock endpoint responses.
+Run: `./build-tests/ai_file_sorter_tests "E2E mixed workload"`
 
 ### `tests/unit/test_analysis_runtime_lock.cpp`
 

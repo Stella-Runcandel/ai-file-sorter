@@ -12,9 +12,9 @@ UI-neutral headless flow used by integrations.
   `AnalysisWorkflowContext` coordinate scanning, categorization, review data,
   rename suggestions, and apply preparation without hard-coding a GUI-only host.
 - **Categorization and naming**: `CategorizationService`,
-  `LocalLLMPromptBuilder`, LLM client implementations, whitelist handling, and
-  file-type policy code decide categories, subcategories, and supported rename
-  suggestions.
+  `LLMClient`, `IAIProvider` / `OpenAICompatibleProvider`, `EndpointImageAnalyzer`,
+  whitelist handling, and file-type policy code decide categories, subcategories,
+  and supported rename suggestions.
 - **Persistence and settings**: `Settings`, `DatabaseManager`, cache
   maintenance, learned behavior, and undo-plan storage persist local state.
 - **Headless/integration contract**: `HeadlessAnalysisCommand`,
@@ -48,7 +48,7 @@ UI-neutral headless flow used by integrations.
 - **Headless apply**: `HeadlessReviewApplyService` replays saved review plans
   without rerunning the full analysis.
 - **Prompt and taxonomy work**: `CategorizationService`,
-  `LocalLLMPromptBuilder`, whitelist logic, and the related unit tests are the
+  `LLMClient`, whitelist logic, and the related unit tests are the
   main surfaces to touch.
 
 ## Change guidelines

@@ -63,12 +63,12 @@ The system supports both text-only and multimodal (image + text) categorization 
 | # | Name | Scope | Dependencies | Status |
 |---|------|-------|-------------|--------|
 | M1 | Canonical AI Domain Model (R1) | Pure C++20 domain abstractions (`AIContentPart`, `AIMessage`, `AIRequest`, `AIResponse`, `ProviderCapabilities`) | none | DONE |
-| M2 | OpenAI HTTP Provider & URL Resolver (R2) | `IAIProvider`, `EndpointUrlResolver`, `OpenAICompatibleProvider`, `/v1/models` probe, Bearer auth | M1 | PLANNED |
-| M3 | Multimodal Vision & Preprocessing (R3) | `ImagePreprocessingService`, 2048x2048 downscaler, JPEG encoder, base64 URI, vision capability guard | M1 | PLANNED |
-| M4 | Dual-Path Integration & Zero Fallback (R4) | `AIProviderLLMClientAdapter`, `CategorizationService` & `AnalysisCoordinator` routing, zero fallback | M2, M3 | PLANNED |
-| M5 | Settings UI & Safe Logging (R5) | `SecretMasker`, `CustomApiDialog`, `LLMSelectionDialog`, connection test & capability badges | M2, M4 | PLANNED |
-| E2E | E2E Testing Track | `MockOpenAIServer` test harness, 4-tier Catch2 test suite (Tiers 1-4), publish `TEST_READY.md` | M1 (runs parallel) | PLANNED |
-| M6 | Final Integration & Hardening | Phase 1: Pass 100% E2E tests (Tiers 1-4); Phase 2: Adversarial Hardening (Tier 5) | M5, E2E | PLANNED |
+| M2 | OpenAI HTTP Provider & URL Resolver (R2) | `IAIProvider`, `EndpointUrlResolver`, `OpenAICompatibleProvider`, `/v1/models` probe, Bearer auth | M1 | DONE |
+| M3 | Multimodal Vision & Preprocessing (R3) | `ImagePreprocessingService`, 2048x2048 downscaler, JPEG encoder, base64 URI, vision capability guard | M1 | DONE |
+| M4 | Dual-Path Integration & Zero Fallback (R4) | `AIProviderLLMClientAdapter`, `CategorizationService` & `AnalysisCoordinator` routing, zero fallback | M2, M3 | DONE |
+| M5 | Settings UI & Safe Logging (R5) | `SecretMasker`, `CustomApiDialog`, `LLMSelectionDialog`, connection test & capability badges | M2, M4 | DONE |
+| E2E | E2E Testing Track | `MockOpenAIServer` test harness, 4-tier Catch2 test suite (Tiers 1-4), publish `TEST_READY.md` | M1 (runs parallel) | DONE |
+| M6 | Final Integration & Hardening | Phase 1: Pass 100% E2E tests (Tiers 1-4); Phase 2: Adversarial Hardening (Tier 5) | M5, E2E | DONE |
 
 ## Interface Contracts
 
